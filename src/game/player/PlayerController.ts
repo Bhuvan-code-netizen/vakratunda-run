@@ -19,6 +19,15 @@ export type PlayerAnimState = "run" | "jump" | "fall" | "dead";
 const EAR_REST = { x: 0.06, y: 0.28, z: 0.16 };
 
 /**
+ * The riding seat. Thighs angled forward and splayed out over the flanks,
+ * knees dropped so the shins hang down the sides of the mount and the feet
+ * ride at the height of its belly. These three angles are the whole posture.
+ */
+const SEAT_THIGH = 0.78;
+const SEAT_KNEE = -1.02;
+const SEAT_SPLAY = 0.45;
+
+/**
  * Movement signals the controller raises for the effect and audio layers.
  * The controller itself never touches particles — GameApp decides what a
  * footfall or a landing looks like.
@@ -218,11 +227,11 @@ export class PlayerController {
     }
 
     this.updateAnimation(dt, runSpeed);
-    this.animateRigAlways(dt, r);
+    this.animateRigAlways(dt, r, runSpeed);
   }
 
   /** Secondary motion that runs in every state: trunk, ears, halo, plate. */
-  private animateRigAlways(dt: number, r: GaneshaRig) {
+  private animateRigAlways(dt: number, r: GaneshaRig, runSpeed: number) {
     const p = this.runPhase;
     const dead = this.animState === "dead";
 
@@ -283,26 +292,35 @@ export class PlayerController {
     r.dhoti.rotation.z = this.bankSmooth * 0.05;
     r.dhoti.rotation.x = this.animState === "run" ? 0.06 + this.lean * 0.05 : 0.12;
 
-    this.animateMooshika(dt, r);
+    this.animateMooshika(dt, r, runSpeed);
   }
 
   /**
-   * Mooshika: the vahana scurrying ahead of the stride.
+   * Mooshika, carrying the god: the vahana is the locomotion now.
    *
-   * His gait is deliberately not the running stride. A mouse steps in short,
-   * quick bursts on diagonal pairs — front-left with back-right — so he is
-   * driven from his own clock at roughly twice the cadence of the run. Off the
-   * ground he tucks his paws and streams his tail; when the run ends he skids
-   * flat. Nothing here reads or writes the score: he is company, not score.
+   * A mouse steps in short, quick bursts on diagonal pairs — front-left with
+   * back-right — and that scurry is what the run reads as its gait, so this
+   * clock also drives the rider (see updateAnimation). Off the ground he tucks
+   * his paws and streams his tail; when the run ends he skids flat. Nothing
+   * here reads or writes the score.
    */
-  private animateMooshika(dt: number, r: GaneshaRig) {
+  private animateMooshika(dt: number, r: GaneshaRig, runSpeed: number) {
     const run = this.animState === "run";
     const air = this.animState === "jump" || this.animState === "fall";
     const dead = this.animState === "dead";
 
-    // Short quick steps, tightening further as the pace climbs.
-    this.mooshikaPhase += dt * (run ? 6.2 + this.lean * 4 : 1.6) * Math.PI * 2;
+    // A mount moves quicker than a runner: short strides at a high cadence,
+    // tightening further as the pace climbs.
+    this.mooshikaPhase += dt * (run ? 3.4 + this.lean * 2.2 : 1.4) * Math.PI * 2;
     const p = this.mooshikaPhase;
+
+    // His paws are the footfalls now: two per scurry cycle, alternating sides,
+    // so the dust, the sparks and the little taps stay tied to what is seen.
+    const stepIndex = Math.floor(p / Math.PI);
+    if (run && stepIndex !== this.lastStepIndex) {
+      this.lastStepIndex = stepIndex;
+      this.events.footstep?.(this.x, stepIndex % 2 === 0 ? 1 : -1, runSpeed);
+    }
 
     // Paws in diagonal pairs. Small amplitude at high frequency is what
     // separates a scurry from a gallop.
@@ -319,16 +337,15 @@ export class PlayerController {
     // Body: a fast bob, a pitch that answers the jump, and a roll that follows
     // the lane change with the god.
     r.mooshika.position.y =
-      this.mooshikaHome.y + (run ? Math.abs(Math.sin(p)) * 0.01 : 0) - (dead ? 0.015 : 0);
+      this.mooshikaHome.y + (run ? Math.abs(Math.sin(p)) * 0.035 : 0) - (dead ? 0.03 : 0);
     r.mooshika.rotation.x =
-      (air ? (this.animState === "jump" ? -0.3 : -0.16) : Math.sin(p * 2) * 0.02) -
+      (air ? (this.animState === "jump" ? -0.34 : -0.18) : Math.sin(p * 2) * 0.03) -
       this.lean * 0.06;
     r.mooshika.rotation.y = THREE.MathUtils.clamp(-this.bankSmooth * 0.02, -0.35, 0.35);
     r.mooshika.rotation.z = Math.sin(p) * 0.05 - this.bankSmooth * 0.02;
 
-    // Head: nose forward and up, wobbling a little. He looks down the road,
-    // not at the camera — the eyes of the god already carry the shot.
-    r.mooshikaHead.rotation.x = -0.1 + Math.sin(p + 0.7) * 0.05 - (air ? 0.18 : 0);
+    // Head down and working, nodding with the stride: a mount, not a pet.
+    r.mooshikaHead.rotation.x = -0.06 + Math.sin(p + 0.7) * 0.08 - (air ? 0.2 : 0);
     r.mooshikaHead.rotation.y = Math.sin(p * 0.5 + 1.1) * 0.1;
 
     // Tail: every joint lags the one before it, so the whip travels outward.
@@ -349,68 +366,74 @@ export class PlayerController {
     const pace = THREE.MathUtils.clamp(runSpeed / 30, 0, 1.4);
 
     if (this.animState === "run") {
-      const stride = 2.4 + pace * 2.6;
-      this.runPhase += dt * stride * Math.PI * 2;
-      const p = this.runPhase;
+      // Riding, not running. The gait that matters now belongs to the vahana:
+      // the rider is driven off the scurry clock, and his legs are a seat
+      // rather than a stride.
+      const p = this.mooshikaPhase;
       const s = Math.sin(p);
-      const c = Math.cos(p);
+      const bound = Math.abs(Math.cos(p));
 
-      // Legs: hips swing, knees flex through the recovery phase
-      r.leftLeg.rotation.x = s * 0.8;
-      r.rightLeg.rotation.x = -s * 0.8;
-      r.leftKnee.rotation.x = -(0.16 + Math.max(0, -Math.sin(p - 0.7)) * 1.15);
-      r.rightKnee.rotation.x = -(0.16 + Math.max(0, Math.sin(p + 0.7)) * 1.15);
+      // The trunk, ears and halo keep their own slower clock.
+      this.runPhase += dt * (1.5 + pace * 1.1) * Math.PI * 2;
 
-      // Hips carry the weight shift, so the whole body has a cadence
-      r.hips.position.x = s * 0.04;
-      r.hips.rotation.y = s * 0.12;
-      r.hips.rotation.z = -s * 0.05;
+      // Seat: thighs forward and splayed over the flanks, knees dropped so the
+      // shins hang down the sides of the mount.
+      r.leftLeg.rotation.x = SEAT_THIGH;
+      r.rightLeg.rotation.x = SEAT_THIGH;
+      r.leftLeg.rotation.z = -SEAT_SPLAY;
+      r.rightLeg.rotation.z = SEAT_SPLAY;
+      r.leftKnee.rotation.x = SEAT_KNEE;
+      r.rightKnee.rotation.x = SEAT_KNEE;
 
-      // Lower arms counter-swing, elbows held bent like a real runner
-      r.leftArm.rotation.x = -s * 0.62;
-      r.rightArm.rotation.x = s * 0.62;
-      r.leftArm.rotation.z = -0.06 - this.lean * 0.08;
-      r.rightArm.rotation.z = 0.06 + this.lean * 0.08;
-      r.leftElbow.rotation.x = 0.95 + Math.max(0, -s) * 0.3;
-      r.rightElbow.rotation.x = 0.95 + Math.max(0, s) * 0.3;
+      // Hips take the motion of the mount: a small roll and weight shift.
+      r.hips.position.x = s * 0.025;
+      r.hips.rotation.y = s * 0.05;
+      r.hips.rotation.z = -s * 0.03;
 
-      // Upper pair holds his relics with a gentle sway
-      r.leftUpperArm.rotation.x = Math.sin(p * 0.5) * 0.07 - this.lean * 0.1;
-      r.rightUpperArm.rotation.x = -Math.sin(p * 0.5) * 0.07 - this.lean * 0.1;
-      r.leftUpperArm.rotation.z = Math.sin(p * 0.5 + 1) * 0.05;
-      r.rightUpperArm.rotation.z = -Math.sin(p * 0.5 + 1) * 0.05;
+      // Lower arms rest on the mount, flexing with each bound instead of
+      // counter-swinging like a runner.
+      r.leftArm.rotation.x = -0.34 - bound * 0.07 - this.lean * 0.12;
+      r.rightArm.rotation.x = -0.34 - bound * 0.07 - this.lean * 0.12;
+      r.leftArm.rotation.z = -0.14;
+      r.rightArm.rotation.z = 0.14;
+      r.leftElbow.rotation.x = 0.72 + bound * 0.1;
+      r.rightElbow.rotation.x = 0.72 + bound * 0.1;
 
-      // Torso: double-bob around its own rest height, forward lean,
-      // hip/shoulder counter-rotation. Offsetting from the rig's rest keeps
-      // the upper body welded to the legs no matter where the model places
-      // its pivots.
-      r.torso.position.y = this.torsoRestY + Math.abs(c) * 0.06;
-      r.torso.rotation.x = -0.1 - pace * 0.07 - this.lean * 0.14;
-      r.torso.rotation.y = -s * 0.09;
-      r.torso.rotation.z = s * 0.05;
+      // The upper pair holds his relics with only a whisper of sway.
+      r.leftUpperArm.rotation.x = Math.sin(p * 0.5) * 0.05 - this.lean * 0.08;
+      r.rightUpperArm.rotation.x = -Math.sin(p * 0.5) * 0.05 - this.lean * 0.08;
+      r.leftUpperArm.rotation.z = Math.sin(p * 0.5 + 1) * 0.04;
+      r.rightUpperArm.rotation.z = -Math.sin(p * 0.5 + 1) * 0.04;
 
-      // Head stays level and looks down the road
-      r.head.rotation.x = 0.08 + pace * 0.05 + this.lean * 0.08;
-      r.head.rotation.y = s * 0.06;
+      // Torso: sits tall, rising and settling with each bound of the mount.
+      // Offsetting from the rig rest height keeps the upper body welded to the
+      // hips wherever the model places its pivots.
+      r.torso.position.y = this.torsoRestY + bound * 0.045;
+      r.torso.rotation.x = -0.05 - pace * 0.04 - this.lean * 0.1;
+      r.torso.rotation.y = -s * 0.06;
+      r.torso.rotation.z = s * 0.03;
+
+      // Head level and looking down the road.
+      r.head.rotation.x = 0.05 + pace * 0.03 + this.lean * 0.06;
+      r.head.rotation.y = s * 0.04;
       r.crown.rotation.z = Math.sin(p * 0.5) * 0.02;
-      r.crown.rotation.x = -Math.abs(c) * 0.015;
+      r.crown.rotation.x = -bound * 0.012;
 
-      // Footfalls, one per half stride, alternating feet
-      const stepIndex = Math.floor(p / Math.PI);
-      if (stepIndex !== this.lastStepIndex) {
-        this.lastStepIndex = stepIndex;
-        this.events.footstep?.(this.x, stepIndex % 2 === 0 ? 1 : -1, runSpeed);
-      }
+      // The paw falls that used to be footfalls are raised by the vahana, in
+      // animateMooshika, where the scurry clock lives.
       return;
     }
 
     if (this.animState === "jump" || this.animState === "fall") {
       const rising = this.animState === "jump";
-      // Tuck on the way up, reach for the ground on the way down
-      r.leftLeg.rotation.x = rising ? 0.85 : 0.4;
-      r.rightLeg.rotation.x = rising ? -0.35 : -0.15;
-      r.leftKnee.rotation.x = rising ? -1.35 : -0.55;
-      r.rightKnee.rotation.x = rising ? -0.5 : -0.25;
+      // The seat holds through the air: the knees pull up on the way out and
+      // open on the way down, but the legs never leave the flanks.
+      r.leftLeg.rotation.x = rising ? SEAT_THIGH + 0.2 : SEAT_THIGH - 0.06;
+      r.rightLeg.rotation.x = rising ? SEAT_THIGH + 0.2 : SEAT_THIGH - 0.06;
+      r.leftLeg.rotation.z = -SEAT_SPLAY * 0.9;
+      r.rightLeg.rotation.z = SEAT_SPLAY * 0.9;
+      r.leftKnee.rotation.x = rising ? SEAT_KNEE - 0.35 : SEAT_KNEE + 0.12;
+      r.rightKnee.rotation.x = rising ? SEAT_KNEE - 0.35 : SEAT_KNEE + 0.12;
 
       r.hips.position.x = 0;
       r.hips.rotation.set(0, 0, 0);
@@ -444,8 +467,11 @@ export class PlayerController {
     r.rightArm.rotation.x = -0.5;
     r.leftElbow.rotation.x = 0.4;
     r.rightElbow.rotation.x = 0.4;
-    r.leftKnee.rotation.x = -0.3;
-    r.rightKnee.rotation.x = -0.3;
+    // He stays in the seat as they go over.
+    r.leftLeg.rotation.x = SEAT_THIGH - 0.2;
+    r.rightLeg.rotation.x = SEAT_THIGH - 0.2;
+    r.leftKnee.rotation.x = SEAT_KNEE + 0.3;
+    r.rightKnee.rotation.x = SEAT_KNEE + 0.3;
     r.torso.rotation.x = -0.15;
     r.head.rotation.x = 0.25;
   }

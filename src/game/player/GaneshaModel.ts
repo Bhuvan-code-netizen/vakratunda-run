@@ -459,6 +459,9 @@ function buildLotus(m: GaneshaMaterials): THREE.Group {
   return lotus;
 }
 
+/** How far the upper body is lifted: he sits on Mooshika, not on the road. */
+const RIG_SEAT_LIFT = 0.18;
+
 /** Resting droop of each tail joint: back and down, then curling up. */
 const MOOSHIKA_TAIL_BENDS = [0.1, 0.06, -0.06, -0.18, -0.3];
 const MOOSHIKA_TAIL_SEGMENT = 0.075;
@@ -467,9 +470,9 @@ const MOOSHIKA_TAIL_SEGMENT = 0.075;
  * Mooshika, the mouse who carries him.
  *
  * Built to the same rule as the god: primitives only, every moving part on its
- * own pivot, facing -Z. He runs just ahead of the stride, clear of the swinging
- * feet, and scaled small so he reads as the vahana leading the way rather than
- * as a second character. Animation is exposed as joint handles only.
+ * own pivot, facing -Z, and scaled up at the end of the build to the mount he
+ * becomes — pet-sized joints are far easier to read in the source. Animation
+ * is exposed as joint handles only.
  */
 function buildMooshika(m: GaneshaMaterials): {
   animal: THREE.Group;
@@ -594,7 +597,9 @@ function buildMooshika(m: GaneshaMaterials): {
     tail.push(joint);
   }
 
-  animal.scale.setScalar(0.7);
+  // A mount, not a pet: big enough to carry a seated rider, with head and tail
+  // still reading either side of him.
+  animal.scale.setScalar(2.15);
   return { animal, head, legs, tail };
 }
 
@@ -603,20 +608,23 @@ export function buildGanesha(): GaneshaRig {
 
   const root = new THREE.Group();
 
+  // He rides: the whole upper body is lifted onto the vahana, and the animation
+  // folds his legs astride instead of running them. This one number is what
+  // ties the rider to the mount — the controller reads the rest heights back.
   const hips = new THREE.Group();
-  hips.position.y = 0.84;
+  hips.position.y = 0.84 + RIG_SEAT_LIFT;
   root.add(hips);
 
   const torso = new THREE.Group();
-  torso.position.y = 0.84;
+  torso.position.y = 0.84 + RIG_SEAT_LIFT;
   root.add(torso);
 
   /* ---------------- Mooshika, the mouse who carries him ---------------- */
 
-  // Placed just ahead of the stride: far enough forward that the swinging feet
-  // never pass through him, close enough to read as running in under the god.
+  // Mooshika is the mount, not a companion: he stands centred under the rider,
+  // his back at the saddle height the hips are lifted to just above.
   const mooshika = buildMooshika(m);
-  mooshika.animal.position.set(0, 0, -0.58);
+  mooshika.animal.position.set(0, 0, -0.02);
   root.add(mooshika.animal);
 
   /* ---------------- legs & dhoti ---------------- */

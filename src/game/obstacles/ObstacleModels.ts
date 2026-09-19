@@ -11,16 +11,16 @@ import {
 /**
  * Obstacle catalogue.
  *
- * Two families live here: the traffic of an Indian street (cars, auto
- * rickshaws, barricades) and the festival procession (the elephant and the
- * five festival modules in `FestivalObstacles`). Every kind exposes the same
+ * Two families live here: the demon horde (the great demons who shoulder
+ * the runner aside, and the imps who caper where traffic used to be) and
+ * the festival modules in `FestivalObstacles`). Every kind exposes the same
  * spec — AABB half-extents plus a builder — so the manager can pool, spawn and
  * collide with them without caring which family they came from.
  */
 
 export type ObstacleKind =
-  | "car"
-  | "rickshaw"
+  | "demon"
+  | "imp"
   | "barricade"
   | "festivalElephant"
   | "dholCart"
@@ -38,90 +38,163 @@ export interface ObstacleSpec {
   build: () => THREE.Group;
 }
 
-function paintCar(body: THREE.Group, color: number) {
-  const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.55 });
-  const glass = new THREE.MeshStandardMaterial({ color: 0x11141c, roughness: 0.15, metalness: 0.4 });
-  const trim = new THREE.MeshStandardMaterial({ color: 0x14121a, roughness: 0.6 });
+/* ------------------------------------------------------------------ */
+/* The demon horde                                                     */
+/* ------------------------------------------------------------------ */
 
-  const lower = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.55, 3.6), paint);
-  lower.position.y = 0.55;
-  body.add(lower);
+/**
+ * What holds the road now.
+ *
+ * The two creatures share one small set of materials, all of them built from
+ * colour alone: no textures, so they load instantly and read at any distance.
+ * Eyes and the chest ember are emissive rather than lit, which is what keeps
+ * them burning at dusk, in rain and at midnight alike.
+ */
+const demonMats = {
+  hide: new THREE.MeshStandardMaterial({ color: COLORS.demonHide, roughness: 0.84 }),
+  hideDeep: new THREE.MeshStandardMaterial({ color: COLORS.demonHideDeep, roughness: 0.92 }),
+  belly: new THREE.MeshStandardMaterial({ color: COLORS.demonBelly, roughness: 0.76 }),
+  horn: new THREE.MeshStandardMaterial({ color: COLORS.demonHorn, roughness: 0.46 }),
+  claw: new THREE.MeshStandardMaterial({ color: COLORS.demonClaw, roughness: 0.36 }),
+  glow: new THREE.MeshStandardMaterial({
+    color: COLORS.demonGlow,
+    emissive: COLORS.demonGlow,
+    emissiveIntensity: 2,
+  }),
+  ember: new THREE.MeshStandardMaterial({
+    color: COLORS.demonEmber,
+    emissive: COLORS.demonEmber,
+    emissiveIntensity: 1.4,
+  }),
+  gold: new THREE.MeshStandardMaterial({ color: COLORS.gold, roughness: 0.34, metalness: 0.75 }),
+};
 
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.5, 1.9), paint);
-  cabin.position.set(0, 1.05, -0.15);
-  body.add(cabin);
-
-  const windshield = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.42, 0.06), glass);
-  windshield.position.set(0, 1.05, 0.82);
-  windshield.rotation.x = -0.25;
-  body.add(windshield);
-
-  // Wheels
-  const wheelGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.22, 14);
-  wheelGeo.rotateZ(Math.PI / 2);
-  for (const [x, z] of [
-    [-0.85, 1.15],
-    [0.85, 1.15],
-    [-0.85, -1.15],
-    [0.85, -1.15],
-  ] as const) {
-    const w = new THREE.Mesh(wheelGeo, trim);
-    w.position.set(x, 0.32, z);
-    body.add(w);
-  }
-
-  // Taillights glow (world scrolls toward +Z, so rear faces the player)
-  const tail = new THREE.MeshStandardMaterial({ color: 0xff5a3c, emissive: 0xff2a1a, emissiveIntensity: 1.4 });
-  for (const x of [-0.55, 0.55]) {
-    const t = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.12, 0.05), tail);
-    t.position.set(x, 0.62, 1.81);
-    body.add(t);
+/** Three claws at one knuckle, curling forward out of the dark. */
+function addClaws(
+  g: THREE.Group,
+  x: number,
+  y: number,
+  z: number,
+  spread: number,
+  pitch: number,
+) {
+  for (let c = -1; c <= 1; c += 1) {
+    const claw = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.18, 6), demonMats.claw);
+    claw.position.set(x + c * spread, y, z);
+    claw.rotation.x = pitch;
+    g.add(claw);
   }
 }
 
-const CAR_COLORS = [COLORS.carRed, COLORS.carWhite, COLORS.carBlue];
-
-function buildCar(): THREE.Group {
+/**
+ * The great demon: squared up to the runner, horns swept back, one hand on a
+ * club and an ember burning in the chest. He stands about two metres tall and
+ * is meant to be dodged sideways, never jumped.
+ */
+function buildDemon(): THREE.Group {
   const g = new THREE.Group();
-  paintCar(g, CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)]);
-  return g;
-}
+  const m = demonMats;
 
-function buildRickshaw(): THREE.Group {
-  const g = new THREE.Group();
-  const yellow = new THREE.MeshStandardMaterial({ color: COLORS.rickshawYellow, roughness: 0.5, metalness: 0.2 });
-  const black = new THREE.MeshStandardMaterial({ color: COLORS.rickshawBlack, roughness: 0.7 });
-  const canopy = new THREE.MeshStandardMaterial({ color: 0x0f0d12, roughness: 0.85 });
+  // Bowed legs and splayed feet, planted either side of the lane
+  for (const side of [-1, 1] as const) {
+    const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.23, 0.72, 10), m.hide);
+    thigh.position.set(side * 0.36, 0.62, 0.02);
+    thigh.rotation.z = side * 0.1;
+    g.add(thigh);
 
-  // Front wheel + handlebar column
-  const wheelGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.14, 12);
-  wheelGeo.rotateZ(Math.PI / 2);
-  const frontWheel = new THREE.Mesh(wheelGeo, black);
-  frontWheel.position.set(0, 0.3, 1.15);
-  g.add(frontWheel);
+    const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.17, 0.44, 10), m.hideDeep);
+    shin.position.set(side * 0.42, 0.22, -0.02);
+    g.add(shin);
 
-  const column = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.9, 8), black);
-  column.position.set(0, 0.75, 1.12);
-  g.add(column);
-
-  // Cab body
-  const cab = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.7, 1.7), yellow);
-  cab.position.set(0, 0.62, -0.15);
-  g.add(cab);
-
-  // Canopy (half-cylinder top)
-  const top = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.68, 1.7, 12, 1, false, 0, Math.PI), canopy);
-  top.rotation.z = Math.PI / 2;
-  top.rotation.y = Math.PI / 2;
-  top.position.set(0, 0.98, -0.15);
-  g.add(top);
-
-  // Rear wheels
-  for (const x of [-0.62, 0.62]) {
-    const w = new THREE.Mesh(wheelGeo, black);
-    w.position.set(x, 0.3, -0.85);
-    g.add(w);
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.14, 0.52), m.hideDeep);
+    foot.position.set(side * 0.42, 0.07, 0.02);
+    g.add(foot);
+    addClaws(g, side * 0.42, 0.08, 0.3, 0.1, -1.48);
   }
+
+  // Barrel torso over a heavier gut
+  const torso = new THREE.Mesh(new THREE.SphereGeometry(0.44, 16, 14), m.hide);
+  torso.position.set(0, 1.16, -0.02);
+  torso.scale.set(1.06, 1.12, 0.84);
+  g.add(torso);
+
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 12), m.belly);
+  belly.position.set(0, 1.0, 0.16);
+  belly.scale.set(1, 0.92, 0.62);
+  g.add(belly);
+
+  // The ember in the chest: the one bright thing facing the runner
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.17, 12, 10), m.ember);
+  core.position.set(0, 1.24, 0.28);
+  core.scale.set(1, 1.1, 0.55);
+  g.add(core);
+
+  const shoulders = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 12), m.hideDeep);
+  shoulders.position.set(0, 1.44, -0.02);
+  shoulders.scale.set(1.22, 0.56, 0.72);
+  g.add(shoulders);
+
+  // Arms: heavy, hanging, clawed
+  for (const side of [-1, 1] as const) {
+    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 0.52, 10), m.hide);
+    upper.position.set(side * 0.52, 1.34, 0);
+    upper.rotation.z = side * -0.42;
+    g.add(upper);
+
+    const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.48, 10), m.hideDeep);
+    fore.position.set(side * 0.68, 1.04, 0.06);
+    fore.rotation.z = side * -0.18;
+    fore.rotation.x = 0.22;
+    g.add(fore);
+
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), m.hide);
+    hand.position.set(side * 0.72, 0.84, 0.1);
+    g.add(hand);
+    addClaws(g, side * 0.72, 0.76, 0.2, 0.06, 2.3);
+  }
+
+  // Skull, jaw and the horns
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 12), m.hide);
+  head.position.set(0, 1.78, 0.02);
+  head.scale.set(1, 0.94, 1.06);
+  g.add(head);
+
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.17, 0.36), m.hideDeep);
+  jaw.position.set(0, 1.6, 0.14);
+  g.add(jaw);
+
+  for (const side of [-1, 1] as const) {
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.075, 0.56, 10), m.horn);
+    horn.position.set(side * 0.22, 2.0, -0.06);
+    horn.rotation.z = side * 0.5;
+    horn.rotation.x = -0.42;
+    g.add(horn);
+
+    const tusk = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.22, 8), m.claw);
+    tusk.position.set(side * 0.14, 1.58, 0.24);
+    tusk.rotation.x = -2.7;
+    g.add(tusk);
+
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.062, 10, 8), m.glow);
+    eye.position.set(side * 0.12, 1.82, 0.26);
+    g.add(eye);
+  }
+
+  // A gold torc at the collar and the club over one shoulder
+  const torc = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.035, 8, 20), m.gold);
+  torc.position.set(0, 1.52, 0);
+  torc.rotation.x = Math.PI / 2;
+  g.add(torc);
+
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.92, 8), m.gold);
+  shaft.position.set(-0.74, 1.34, 0.12);
+  shaft.rotation.z = 0.26;
+  g.add(shaft);
+
+  const clubHead = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), m.horn);
+  clubHead.position.set(-0.86, 1.76, 0.14);
+  clubHead.scale.set(0.92, 1.1, 0.92);
+  g.add(clubHead);
 
   return g;
 }

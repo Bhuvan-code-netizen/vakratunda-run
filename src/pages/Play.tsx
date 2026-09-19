@@ -153,17 +153,12 @@ export default function Play() {
         detail instanceof Error
           ? `${detail.message}${
               detail.stack
-                ? `
-${detail.stack.split("
-").slice(1, 6).join("
-")}`
+                ? `\n${detail.stack.split("\n").slice(1, 6).join("\n")}`
                 : ""
             }`
           : String(detail);
       console.error(`[Vakratunda] ${label}:`, detail);
-      setMountError(`${label}
-
-${message}`);
+      setMountError(`${label}\n\n${message}`);
     };
     const onError = (e: ErrorEvent) =>
       reportError(

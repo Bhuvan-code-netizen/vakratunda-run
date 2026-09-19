@@ -4,7 +4,14 @@
  * added later by calling `emit` — gameplay never touches DOM events directly.
  */
 
-export type InputAction = "left" | "right" | "jump" | "restart" | "audio" | "debug";
+export type InputAction =
+  | "left"
+  | "right"
+  | "jump"
+  | "restart"
+  | "pause"
+  | "audio"
+  | "debug";
 
 type ActionListener = (action: InputAction) => void;
 

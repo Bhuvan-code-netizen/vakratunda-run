@@ -1,0 +1,23 @@
+[package]
+name = "vakratunda-run"
+version = "0.1.0"
+description = "Vakratunda Run: a cinematic three-lane endless runner through the Ganesh festival"
+authors = ["Vakratunda Run"]
+edition = "2021"
+rust-version = "1.77.2"
+
+# The desktop shell around the game is deliberately thin: the game itself is the
+# same Vite build the browser serves, so the web preview and the desktop app
+# share one codebase, one set of assets and one set of physics.
+
+[lib]
+name = "vakratunda_run_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

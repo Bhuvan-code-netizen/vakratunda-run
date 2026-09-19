@@ -32,6 +32,8 @@ export interface ObstacleInstance {
   active: boolean;
   /** A near miss has already been scored for this instance. */
   grazed: boolean;
+  /** Offset into the prowl idle, so no two demons animate in step. */
+  phase: number;
 }
 
 /** A graze this frame: one point of contact for the HUD and the score. */
@@ -48,8 +50,8 @@ export interface NearMissEvent {
 
 /** How many of each kind may be in flight at once. */
 const POOL_SIZES: Record<ObstacleKind, number> = {
-  car: 6,
-  rickshaw: 4,
+  demon: 5,
+  imp: 5,
   barricade: 5,
   festivalElephant: 3,
   dholCart: 3,
@@ -60,13 +62,13 @@ const POOL_SIZES: Record<ObstacleKind, number> = {
 };
 
 /**
- * The procession arrives as the run goes on. Traffic carries the first
+ * The procession arrives as the run goes on. The horde carries the first
  * kilometre; the festival modules unlock into the mix from there, so a long run
  * keeps introducing obstacles the player has not met before.
  */
 const SPAWN_TABLE: Array<{ kind: ObstacleKind; weight: number; from: number }> = [
-  { kind: "car", weight: 3, from: 0 },
-  { kind: "rickshaw", weight: 3, from: 60 },
+  { kind: "demon", weight: 3, from: 0 },
+  { kind: "imp", weight: 3, from: 60 },
   { kind: "barricade", weight: 2.5, from: 130 },
   { kind: "crackerStack", weight: 2, from: 220 },
   { kind: "coconutHeap", weight: 2, from: 300 },
@@ -100,7 +102,14 @@ export class ObstacleManager {
       const group = spec.build();
       group.visible = false;
       this.scene.add(group);
-      list.push({ kind, group, lane: 1, active: false, grazed: false });
+      list.push({
+        kind,
+        group,
+        lane: 1,
+        active: false,
+        grazed: false,
+        phase: Math.random() * Math.PI * 2,
+      });
     }
     return list;
   }
@@ -135,7 +144,7 @@ export class ObstacleManager {
       open.push(entry);
       total += entry.weight;
     }
-    if (open.length === 0) return "car";
+    if (open.length === 0) return "demon";
     let roll = Math.random() * total;
     for (const entry of open) {
       roll -= entry.weight;
@@ -169,6 +178,15 @@ export class ObstacleManager {
     for (let i = this.active.length - 1; i >= 0; i--) {
       const inst = this.active[i]!;
       inst.group.position.z += dz;
+      // The horde is alive: every demon breathes and shifts his weight as the
+      // road comes at him, so a lane never reads as a parked prop.
+      if (inst.kind === "demon" || inst.kind === "imp") {
+        inst.phase += dt * (inst.kind === "imp" ? 3.6 : 2.1);
+        const breath = Math.sin(inst.phase);
+        inst.group.position.y = Math.abs(breath) * (inst.kind === "imp" ? 0.05 : 0.07);
+        inst.group.rotation.y = breath * (inst.kind === "imp" ? 0.15 : 0.08);
+        inst.group.rotation.z = Math.cos(inst.phase * 0.5) * 0.03;
+      }
       if (inst.group.position.z > OBSTACLE_RECYCLE_Z) {
         inst.group.visible = false;
         inst.active = false;
@@ -200,7 +218,7 @@ export class ObstacleManager {
       inst.lane = lane;
       inst.group.visible = true;
       inst.group.position.set(LANES[lane], 0, OBSTACLE_SPAWN_Z);
-      inst.group.rotation.y = 0;
+      inst.group.rotation.set(0, 0, 0);
       this.active.push(inst);
     }
   }

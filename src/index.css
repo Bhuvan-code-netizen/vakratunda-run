@@ -124,3 +124,28 @@
     cursor: pointer;
   }
 }
+
+/* A one-shot wash of colour for the moments the HUD should echo: a graze,
+   a blessing tier, the ultimate arriving, a milestone, the end of a run. */
+@keyframes vakratunda-flash {
+  0% {
+    opacity: 0;
+  }
+  14% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.flash-wash {
+  animation: vakratunda-flash 640ms ease-out forwards;
+  mix-blend-mode: screen;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flash-wash {
+    animation-duration: 200ms;
+  }
+}

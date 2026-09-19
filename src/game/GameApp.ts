@@ -354,6 +354,8 @@ export class GameApp {
     this.powerTimers[kind] = durationFor(kind);
     this.powers[kind] = true;
     this.effects.powerUp(x, y, POWERUP_COLORS[kind]);
+    // Vighnaharta gets the full set piece: the street turns over for it.
+    if (kind === "vighnaharta") this.effects.ultimateBlast(x, y);
     this.audio.powerUp(kind);
     // The ultimate lands hard: a bigger camera kick than the other relics.
     this.cameraRig.impulse(kind === "dash" ? 0.28 : kind === "vighnaharta" ? 0.34 : 0.1);
@@ -623,6 +625,7 @@ export class GameApp {
       this.milestoneFlash = this.nextMilestone;
       this.milestoneFlashTimer = 2.2;
       this.nextMilestone += MILESTONE_STEP;
+      this.effects.milestoneBloom(this.player.root.position.x, this.player.positionY);
       this.audio.milestone();
     }
     if (this.milestoneFlashTimer > 0) {
@@ -697,8 +700,12 @@ export class GameApp {
         this.audio.vighnahartaSmash();
         this.cameraRig.impulse(0.24);
       } else if (this.powers.shield) {
-        const debris =
-          hit.kind === "car" || hit.kind === "rickshaw" || hit.kind === "barricade"
+        // A demon of the horde bursts into brimstone; the festival props
+        // and the barricades come apart as stone.
+        const horde = hit.kind === "demon" || hit.kind === "imp";
+        const debris = horde
+          ? COLORS.demonAsh
+          : hit.kind === "barricade"
             ? COLORS.stone
             : COLORS.marigold;
         const z = hit.group.position.z;

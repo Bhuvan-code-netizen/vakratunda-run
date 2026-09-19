@@ -121,6 +121,16 @@ const POWER_META: Record<
 
 const POWER_ORDER: PowerUpKind[] = ["shield", "dash", "magnet", "multiplier", "vighnaharta"];
 
+/**
+ * One-shot colour washes. Each beat of a run has its own tint, so the screen
+ * itself reacts with the street instead of only the corner of the HUD.
+ */
+const WASH = {
+  gold: "radial-gradient(circle at 50% 58%, rgba(255,226,150,0.5), rgba(255,170,60,0) 72%)",
+  ultimate: "radial-gradient(circle at 50% 55%, rgba(255,248,220,0.7), rgba(255,200,90,0) 78%)",
+  crash: "radial-gradient(circle at 50% 62%, rgba(255,74,52,0.45), rgba(110,8,8,0) 74%)",
+};
+
 /** Sky phase for a night value of 0…1. */
 function nightLabel(night: number): string {
   if (night < 0.22) return "DUSK";
@@ -143,6 +153,44 @@ export default function Play() {
   const [debugOpen, setDebugOpen] = useState(false);
   /** Any crash that would otherwise leave a silent white page. */
   const [mountError, setMountError] = useState<string | null>(null);
+  /** The moment wash currently on screen, if any. */
+  const [wash, setWash] = useState<{ key: number; background: string } | null>(null);
+  const washKey = useRef(0);
+  const washTimer = useRef<number | null>(null);
+  const lastState = useRef<GameSnapshot["state"]>("ready");
+  const lastMilestone = useRef<number | null>(null);
+  const lastUltimate = useRef(false);
+
+  // One timer, cleared on unmount, so a wash can never outlive the page.
+  useEffect(() => {
+    return () => {
+      if (washTimer.current !== null) window.clearTimeout(washTimer.current);
+    };
+  }, []);
+
+  /**
+   * Watch for the beats worth washing the screen for: the ultimate arriving,
+   * a distance milestone, and the moment the run ends. Nothing here reads the
+   * frame, so it only fires when one of those three actually changes.
+   */
+  useEffect(() => {
+    const fire = (background: string) => {
+      washKey.current += 1;
+      setWash({ key: washKey.current, background });
+      if (washTimer.current !== null) window.clearTimeout(washTimer.current);
+      washTimer.current = window.setTimeout(() => setWash(null), 640);
+    };
+
+    const ultimate = snap.powerUps.vighnaharta > 0;
+    if (ultimate && !lastUltimate.current) fire(WASH.ultimate);
+    lastUltimate.current = ultimate;
+
+    if (snap.milestone !== null && snap.milestone !== lastMilestone.current) fire(WASH.gold);
+    lastMilestone.current = snap.milestone;
+
+    if (snap.state === "gameover" && lastState.current !== "gameover") fire(WASH.crash);
+    lastState.current = snap.state;
+  }, [snap.state, snap.milestone, snap.powerUps.vighnaharta]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -232,6 +280,15 @@ export default function Play() {
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#0b0712]">
       <div ref={containerRef} className="absolute inset-0" />
+
+      {/* ---- Moment wash: the screen flinches with every big beat ---- */}
+      {wash && (
+        <div
+          key={wash.key}
+          className="flash-wash pointer-events-none absolute inset-0"
+          style={{ background: wash.background }}
+        />
+      )}
 
       {/* ---- Crash report: never leave the preview white and silent ---- */}
       {mountError && (

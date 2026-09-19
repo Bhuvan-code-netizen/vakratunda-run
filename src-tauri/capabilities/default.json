@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The permissions the game window runs with: the minimal core set, nothing more.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

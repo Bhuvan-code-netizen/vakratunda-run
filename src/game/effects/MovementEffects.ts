@@ -13,6 +13,8 @@ import { ParticleSystem } from "./ParticleSystem";
 export class MovementEffects {
   private sparks: ParticleSystem;
   private dust: ParticleSystem;
+  /** The shape half of the layer: rings, blooms and columns of light. */
+  private moments: MomentFX;
   private origin = new THREE.Vector3();
   private windVelocity = new THREE.Vector3();
 
@@ -23,12 +25,14 @@ export class MovementEffects {
       size: 0.95,
       opacity: 0.7,
     });
+    this.moments = new MomentFX(scene);
   }
 
   /** Integrate and keep both systems pinned to the scrolling road. */
   update(dt: number, scroll: number) {
     this.sparks.update(dt);
     this.dust.update(dt);
+    this.moments.update(dt);
     this.sparks.scrollZ(scroll);
     this.dust.scrollZ(scroll);
   }
@@ -195,6 +199,27 @@ export class MovementEffects {
       gravity: flyOver ? -1.2 : 2.4,
       drag: 2.2,
     });
+    // The shape half of the graze, so an escape registers in the corner of the eye.
+    this.grazeFlare(x, y, z, flyOver);
+  }
+
+  /**
+   * The flare that marks a graze: a ring snapped off the obstacle and a bloom
+   * on it. Gold and flat for a leap over the top, warm white and upright for a
+   * squeeze past the side, so the two escapes never read alike.
+   */
+  grazeFlare(x: number, y: number, z: number, flyOver: boolean) {
+    const color = flyOver ? COLORS.goldBright : COLORS.spark;
+    this.moments.ring(x, y, z, {
+      color,
+      from: flyOver ? 0.45 : 0.3,
+      to: flyOver ? 2.9 : 1.9,
+      life: flyOver ? 0.42 : 0.32,
+      peak: flyOver ? 0.9 : 0.65,
+      flat: flyOver,
+      rise: flyOver ? 0.5 : 0,
+    });
+    this.moments.flash(x, y, z, { color, size: flyOver ? 2.3 : 1.5, life: 0.2, peak: 0.6 });
   }
 
   /** Modak collected: a warm sparkle at the point of pickup. */
@@ -227,6 +252,28 @@ export class MovementEffects {
       gravity: -1.1,
       drag: 1.3,
     });
+    this.tierBurst(x, y);
+  }
+
+  /** The tier bloom: two counter-rotating gold rings with a burst at the heart. */
+  tierBurst(x: number, y: number) {
+    this.moments.ring(x, y + 0.9, 0, {
+      color: COLORS.goldBright,
+      from: 0.5,
+      to: 3.2,
+      life: 0.7,
+      peak: 0.9,
+      spin: 0.9,
+    });
+    this.moments.ring(x, y + 0.9, 0, {
+      color: COLORS.haloGlow,
+      from: 0.3,
+      to: 2.2,
+      life: 0.5,
+      peak: 0.7,
+      spin: -1.4,
+    });
+    this.moments.flash(x, y + 1.1, 0, { color: COLORS.goldBright, size: 3, life: 0.3, peak: 0.7 });
   }
 
   /**
@@ -258,6 +305,15 @@ export class MovementEffects {
       color,
       gravity: -0.6,
       drag: 1.0,
+    });
+    // A ring in the power own colour, so the pickup is legible at a glance.
+    this.moments.ring(x, y + 1.0, 0, {
+      color,
+      from: 0.6,
+      to: 2.7,
+      life: 0.55,
+      peak: 0.7,
+      spin: 1.2,
     });
   }
 
@@ -306,6 +362,14 @@ export class MovementEffects {
       color: COLORS.shieldGlow,
       gravity: 3.0,
       drag: 1.0,
+    });
+    this.moments.ring(x, y + 0.5, z, {
+      color: COLORS.shieldGlow,
+      from: 0.5,
+      to: 3.6,
+      life: 0.5,
+      peak: 0.75,
+      flat: true,
     });
   }
 
@@ -401,10 +465,348 @@ export class MovementEffects {
       gravity: 3.4,
       drag: 1.1,
     });
+    this.crashBlast(x, y, 0.3, COLORS.vermillion);
+  }
+
+  /**
+   * The end of a run: a hard shockwave off the road, a red bloom and a column
+   * of dust punched up, so a crash lands as an event rather than a stop.
+   */
+  crashBlast(x: number, y: number, z: number, color: number) {
+    this.moments.ring(x, y + 0.3, z, { color, from: 0.5, to: 5.4, life: 0.55, peak: 0.85, flat: true });
+    this.moments.ring(x, y + 0.6, z, { color: COLORS.spark, from: 0.4, to: 3.4, life: 0.42, peak: 0.7 });
+    this.moments.flash(x, y + 0.8, z, { color, size: 4.2, life: 0.34, peak: 0.8 });
+    this.moments.column(x, y, z, { color: COLORS.dust, height: 3.2, life: 0.6, peak: 0.4 });
+  }
+
+  /**
+   * Vighnaharta arrives: the remover of obstacles. Three rings tear outward in
+   * sequence, a column of light opens on the road, and the whole street goes
+   * white-gold for a beat before the horde starts coming apart.
+   */
+  ultimateBlast(x: number, y: number) {
+    const color = COLORS.vighnahartaGlow;
+    this.moments.ring(x, y + 0.8, 0, { color, from: 0.6, to: 6.5, life: 0.85, peak: 1, flat: true });
+    this.moments.ring(x, y + 1, 0, {
+      color: COLORS.goldBright,
+      from: 0.4,
+      to: 5,
+      life: 0.7,
+      peak: 0.9,
+      spin: 1.6,
+    });
+    this.moments.ring(x, y + 1, 0, { color, from: 0.3, to: 3.6, life: 0.55, peak: 0.85, spin: -2.2 });
+    this.moments.flash(x, y + 1.2, 0, { color, size: 7, life: 0.5, peak: 0.95 });
+    this.moments.column(x, y, 0, { color, height: 5.5, life: 0.8, peak: 0.6 });
+    this.sparks.emit({
+      origin: this.origin.set(x, y + 0.4, 0),
+      count: 40,
+      speed: 6,
+      shape: "up",
+      radius: 0.9,
+      life: 0.8,
+      color,
+      gravity: -1.2,
+      drag: 0.9,
+    });
+  }
+
+  /** A distance milestone: a gold bloom that opens and rises overhead. */
+  milestoneBloom(x: number, y: number) {
+    this.moments.ring(x, y + 1.6, 0, {
+      color: COLORS.goldBright,
+      from: 0.5,
+      to: 3.4,
+      life: 0.9,
+      peak: 0.8,
+      rise: 1.4,
+      flat: true,
+    });
+    this.moments.flash(x, y + 2, 0, { color: COLORS.haloGlow, size: 3.6, life: 0.4, peak: 0.65 });
   }
 
   dispose() {
     this.sparks.dispose();
     this.dust.dispose();
+    this.moments.dispose();
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Moment effects: the set pieces that punctuate a run                 */
+/* ------------------------------------------------------------------ */
+
+interface RingOptions {
+  color: number;
+  from?: number;
+  to?: number;
+  life?: number;
+  peak?: number;
+  /** Lie the ring flat on the road instead of standing it up. */
+  flat?: boolean;
+  rise?: number;
+  spin?: number;
+}
+
+interface FlashOptions {
+  color: number;
+  size: number;
+  life?: number;
+  peak?: number;
+}
+
+interface ColumnOptions {
+  color: number;
+  height: number;
+  life?: number;
+  peak?: number;
+}
+
+/** One expanding ring, pooled. */
+interface RingFx {
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  active: boolean;
+  age: number;
+  life: number;
+  from: number;
+  to: number;
+  peak: number;
+  rise: number;
+  spin: number;
+}
+
+/** One camera-facing bloom, pooled. */
+interface FlashFx {
+  sprite: THREE.Sprite;
+  material: THREE.SpriteMaterial;
+  active: boolean;
+  age: number;
+  life: number;
+  from: number;
+  to: number;
+  peak: number;
+}
+
+/** One column of light, pooled. */
+interface ColumnFx {
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  active: boolean;
+  age: number;
+  life: number;
+  height: number;
+  peak: number;
+}
+
+/**
+ * The shape half of the effect layer.
+ *
+ * A moment reads as a shape, not as grit, so this is meshes rather than
+ * particles: expanding shockwave rings, a soft radial bloom that always faces
+ * the camera, and a column of light. Everything is built once here and
+ * afterwards only repositioned and rescaled, so a run allocates nothing
+ * mid-frame and the live effect count stays bounded.
+ *
+ * Additive and depth-write free throughout, which is what lets it glow at
+ * dusk, in rain and at midnight alike.
+ */
+class MomentFX {
+  private group = new THREE.Group();
+  private rings: RingFx[] = [];
+  private flashes: FlashFx[] = [];
+  private columns: ColumnFx[] = [];
+
+  constructor(scene: THREE.Scene) {
+    scene.add(this.group);
+
+    const ringGeo = new THREE.TorusGeometry(1, 0.05, 8, 44);
+    for (let i = 0; i < 16; i++) {
+      const mesh = new THREE.Mesh(
+        ringGeo,
+        new THREE.MeshBasicMaterial({
+          transparent: true,
+          opacity: 0,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
+      );
+      mesh.visible = false;
+      this.group.add(mesh);
+      this.rings.push({ mesh, active: false, age: 0, life: 1, from: 1, to: 3, peak: 1, rise: 0, spin: 0 });
+    }
+
+    const disc = softDiscTexture();
+    for (let i = 0; i < 6; i++) {
+      const material = new THREE.SpriteMaterial({
+        map: disc,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const sprite = new THREE.Sprite(material);
+      sprite.visible = false;
+      this.group.add(sprite);
+      this.flashes.push({ sprite, material, active: false, age: 0, life: 0.25, from: 1, to: 2, peak: 1 });
+    }
+
+    const columnGeo = new THREE.CylinderGeometry(0.85, 1.15, 1, 16, 1, true);
+    for (let i = 0; i < 4; i++) {
+      const mesh = new THREE.Mesh(
+        columnGeo,
+        new THREE.MeshBasicMaterial({
+          transparent: true,
+          opacity: 0,
+          side: THREE.DoubleSide,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        }),
+      );
+      mesh.visible = false;
+      this.group.add(mesh);
+      this.columns.push({ mesh, active: false, age: 0, life: 0.7, height: 3, peak: 0.7 });
+    }
+  }
+  /** Fire one expanding ring. Silently drops the call when the pool is dry. */
+  ring(x: number, y: number, z: number, opts: RingOptions): void {
+    const fx = this.rings.find((r) => !r.active);
+    if (!fx) return;
+    fx.active = true;
+    fx.age = 0;
+    fx.life = opts.life ?? 0.4;
+    fx.from = opts.from ?? 0.4;
+    fx.to = opts.to ?? 2.4;
+    fx.peak = opts.peak ?? 0.8;
+    fx.rise = opts.rise ?? 0;
+    fx.spin = opts.spin ?? 0;
+    fx.mesh.material.color.setHex(opts.color);
+    fx.mesh.material.opacity = fx.peak;
+    fx.mesh.position.set(x, y, z);
+    fx.mesh.rotation.set(opts.flat ? -Math.PI / 2 : 0, 0, 0);
+    fx.mesh.scale.setScalar(fx.from);
+    fx.mesh.visible = true;
+  }
+
+  /** Fire one bloom facing the camera. */
+  flash(x: number, y: number, z: number, opts: FlashOptions): void {
+    const fx = this.flashes.find((f) => !f.active);
+    if (!fx) return;
+    fx.active = true;
+    fx.age = 0;
+    fx.life = opts.life ?? 0.22;
+    fx.from = opts.size * 0.5;
+    fx.to = opts.size;
+    fx.peak = opts.peak ?? 0.85;
+    fx.material.color.setHex(opts.color);
+    fx.material.opacity = fx.peak;
+    fx.sprite.position.set(x, y, z);
+    fx.sprite.scale.setScalar(fx.from);
+    fx.sprite.visible = true;
+  }
+
+  /** Fire one column of light standing on the road. */
+  column(x: number, y: number, z: number, opts: ColumnOptions): void {
+    const fx = this.columns.find((c) => !c.active);
+    if (!fx) return;
+    fx.active = true;
+    fx.age = 0;
+    fx.life = opts.life ?? 0.6;
+    fx.height = opts.height;
+    fx.peak = opts.peak ?? 0.7;
+    fx.mesh.material.color.setHex(opts.color);
+    fx.mesh.material.opacity = fx.peak;
+    fx.mesh.position.set(x, y + opts.height / 2, z);
+    fx.mesh.scale.set(1, opts.height, 1);
+    fx.mesh.visible = true;
+  }
+
+  /** Integrate every live moment effect. */
+  update(dt: number): void {
+    for (const fx of this.rings) {
+      if (!fx.active) continue;
+      fx.age += dt;
+      const t = fx.age / fx.life;
+      if (t >= 1) {
+        fx.active = false;
+        fx.mesh.visible = false;
+        fx.mesh.material.opacity = 0;
+        continue;
+      }
+      // Fast out, slow settle: a ring snaps open like a shockwave.
+      const eased = 1 - Math.pow(1 - t, 3);
+      fx.mesh.scale.setScalar(fx.from + (fx.to - fx.from) * eased);
+      fx.mesh.material.opacity = fx.peak * (1 - t) * (1 - t);
+      if (fx.rise !== 0) fx.mesh.position.y += fx.rise * dt;
+      if (fx.spin !== 0) fx.mesh.rotation.z += fx.spin * dt;
+    }
+
+    for (const fx of this.flashes) {
+      if (!fx.active) continue;
+      fx.age += dt;
+      const t = fx.age / fx.life;
+      if (t >= 1) {
+        fx.active = false;
+        fx.sprite.visible = false;
+        fx.material.opacity = 0;
+        continue;
+      }
+      const eased = 1 - Math.pow(1 - t, 2);
+      fx.sprite.scale.setScalar(fx.from + (fx.to - fx.from) * eased);
+      fx.material.opacity = fx.peak * (1 - t) * (1 - t);
+    }
+
+    for (const fx of this.columns) {
+      if (!fx.active) continue;
+      fx.age += dt;
+      const t = fx.age / fx.life;
+      if (t >= 1) {
+        fx.active = false;
+        fx.mesh.visible = false;
+        fx.mesh.material.opacity = 0;
+        continue;
+      }
+      const eased = 1 - Math.pow(1 - t, 2);
+      fx.mesh.scale.set(1 + eased * 0.5, fx.height * (0.7 + eased * 0.5), 1 + eased * 0.5);
+      fx.mesh.material.opacity = fx.peak * (1 - t);
+    }
+  }
+
+  /** Free every pooled resource. */
+  dispose(): void {
+    this.group.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        obj.geometry.dispose();
+        const mat = obj.material;
+        if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+        else mat.dispose();
+      } else if (obj instanceof THREE.Sprite) {
+        obj.material.map?.dispose();
+        obj.material.dispose();
+      }
+    });
+    this.group.clear();
+    this.rings = [];
+    this.flashes = [];
+    this.columns = [];
+  }
+}
+
+/**
+ * The soft round bloom the flashes are drawn with. Generated rather than
+ * loaded, so the moment effects stay asset-free like the rest of the game.
+ */
+function softDiscTexture(): THREE.Texture {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return new THREE.Texture();
+  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.3, "rgba(255,255,255,0.5)");
+  grad.addColorStop(0.7, "rgba(255,255,255,0.12)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
 }

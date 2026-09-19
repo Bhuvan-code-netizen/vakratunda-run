@@ -199,6 +199,97 @@ function buildDemon(): THREE.Group {
   return g;
 }
 
+/**
+ * The imp: squat, hunched, all ears, a little trident in one hand. He stands
+ * where the auto-rickshaws used to, and he is just small enough that a
+ * well-timed leap carries the rider clean over his head.
+ */
+function buildImp(): THREE.Group {
+  const g = new THREE.Group();
+  const m = demonMats;
+
+  for (const side of [-1, 1] as const) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.38, 8), m.hideDeep);
+    leg.position.set(side * 0.2, 0.21, -0.02);
+    leg.rotation.z = side * 0.14;
+    g.add(leg);
+
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.09, 0.32), m.hideDeep);
+    foot.position.set(side * 0.23, 0.045, 0.04);
+    g.add(foot);
+    addClaws(g, side * 0.23, 0.055, 0.2, 0.055, -1.5);
+  }
+
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.3, 14, 12), m.hide);
+  body.position.set(0, 0.64, -0.02);
+  body.scale.set(0.96, 1.06, 0.82);
+  g.add(body);
+
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), m.belly);
+  belly.position.set(0, 0.56, 0.14);
+  belly.scale.set(1, 0.9, 0.6);
+  g.add(belly);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.23, 14, 12), m.hide);
+  head.position.set(0, 0.99, 0.06);
+  head.scale.set(1, 0.92, 1.02);
+  g.add(head);
+
+  for (const side of [-1, 1] as const) {
+    // Enormous swept ears, the imp signature
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), m.hideDeep);
+    ear.position.set(side * 0.27, 1.03, 0.02);
+    ear.scale.set(0.3, 1.12, 0.76);
+    ear.rotation.z = side * -0.42;
+    g.add(ear);
+
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.045, 0.28, 8), m.horn);
+    horn.position.set(side * 0.12, 1.2, 0);
+    horn.rotation.z = side * 0.36;
+    g.add(horn);
+
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.046, 10, 8), m.glow);
+    eye.position.set(side * 0.1, 1.0, 0.2);
+    g.add(eye);
+
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.075, 0.36, 8), m.hide);
+    arm.position.set(side * 0.33, 0.66, 0.04);
+    arm.rotation.z = side * -0.7;
+    g.add(arm);
+
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), m.hideDeep);
+    hand.position.set(side * 0.45, 0.5, 0.1);
+    g.add(hand);
+  }
+
+  // The trident he shakes at the road
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 0.92, 8), m.gold);
+  shaft.position.set(0.47, 0.9, 0.12);
+  g.add(shaft);
+
+  const crossbar = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.05, 0.05), m.gold);
+  crossbar.position.set(0.47, 1.36, 0.12);
+  g.add(crossbar);
+
+  for (const dx of [-0.12, 0, 0.12]) {
+    const point = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.18, 6), m.horn);
+    point.position.set(0.47 + dx, 1.46, 0.12);
+    g.add(point);
+  }
+
+  const torc = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.025, 8, 18), m.gold);
+  torc.position.set(0, 0.84, 0.04);
+  torc.rotation.x = Math.PI / 2;
+  g.add(torc);
+
+  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.52, 8), m.hideDeep);
+  tail.position.set(0, 0.5, -0.34);
+  tail.rotation.x = -1.4;
+  g.add(tail);
+
+  return g;
+}
+
 function buildBarricade(): THREE.Group {
   const g = new THREE.Group();
   const frameMat = new THREE.MeshStandardMaterial({ color: 0x5a5560, roughness: 0.6, metalness: 0.4 });
@@ -397,8 +488,8 @@ function buildFestivalElephant(): THREE.Group {
 
 /** Specs + factories for the obstacle types. */
 export const OBSTACLE_SPECS: Record<ObstacleKind, ObstacleSpec> = {
-  car: { kind: "car", halfW: 0.85, halfH: 0.75, halfD: 1.8, build: buildCar },
-  rickshaw: { kind: "rickshaw", halfW: 0.65, halfH: 0.75, halfD: 1.2, build: buildRickshaw },
+  demon: { kind: "demon", halfW: 0.8, halfH: 1.0, halfD: 0.9, build: buildDemon },
+  imp: { kind: "imp", halfW: 0.6, halfH: 0.75, halfD: 0.9, build: buildImp },
   barricade: { kind: "barricade", halfW: 0.95, halfH: 0.45, halfD: 0.15, build: buildBarricade },
   festivalElephant: {
     kind: "festivalElephant",
@@ -415,8 +506,8 @@ export const OBSTACLE_SPECS: Record<ObstacleKind, ObstacleSpec> = {
 };
 
 export const SPAWNABLE_KINDS: ObstacleKind[] = [
-  "car",
-  "rickshaw",
+  "demon",
+  "imp",
   "barricade",
   "festivalElephant",
   "dholCart",

@@ -291,3 +291,20 @@ When using convex, make sure:
 - This includes importing generated files like `@/convex/_generated/server`, `@/convex/_generated/api`
 - Remember to import functions like useQuery, useMutation, useAction, etc. from `convex/react`
 - NEVER have return type validators.
+
+## Desktop app (Tauri)
+
+ wraps the same Vite build in a native desktop window with
+[Tauri](https://tauri.app) 2. The shell is deliberately thin — it hosts the web
+view and does nothing else — so the browser preview and the desktop app run the
+same code, assets and physics.
+
+\
+
+Building the binary needs the Rust toolchain and the Tauri prerequisites for
+your OS on the machine doing the build (WebView2 on Windows, webkit2gtk on
+Linux, Xcode command line tools on macOS); the first run also needs
+ so the bundle has an icon set. See
+ for the details. The web app itself is unaffected: the
+dev server, the preview and the platform build all keep working without Rust
+installed.

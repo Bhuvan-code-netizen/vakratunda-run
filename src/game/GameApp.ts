@@ -58,7 +58,7 @@ import { POWERUP_COLORS } from "./powerups/PowerUpModel";
  * camera is still on its hero shot and collisions are held back so nobody dies
  * before they have seen the road.
  */
-export type GameState = "ready" | "intro" | "running" | "gameover";
+export type GameState = "ready" | "intro" | "running" | "paused" | "gameover";
 
 /** Seconds left on each divine power. 0 means it is not lit. */
 export type PowerTimers = Record<PowerUpKind, number>;
@@ -100,6 +100,8 @@ export interface GameSnapshot {
   fps: number;
   newBest: boolean;
   milestone: number | null;
+  /** True while the run is held on the pause screen. */
+  paused: boolean;
 }
 
 export interface GameCallbacks {
@@ -246,6 +248,11 @@ export class GameApp {
         this.setMuted(!this.audio.isMuted);
         return;
       }
+      // Pausing is the one action that must not skip the hero shot.
+      if (action === "pause") {
+        this.togglePause();
+        return;
+      }
 
       // Any action during the hero shot skips it, then applies to the run.
       if (this.state === "intro") this.endIntro();
@@ -295,8 +302,23 @@ export class GameApp {
     return this.audio.isMuted;
   }
 
+  /**
+   * Hold the run exactly where it stands — pace, traffic, power timers and
+   * the clock — or let it go again. Only a live run can be held.
+   */
+  togglePause() {
+    if (this.state === "running") {
+      this.state = "paused";
+      this.emitSnapshot();
+    } else if (this.state === "paused") {
+      this.state = "running";
+      this.emitSnapshot();
+    }
+  }
+
   start() {
-    if (this.state === "intro" || this.state === "running") return;
+    if (this.state === "intro" || this.state === "running" || this.state === "paused")
+      return;
     if (this.state === "gameover") {
       this.restart();
       return;
@@ -460,6 +482,10 @@ export class GameApp {
       if (this.introTimer >= INTRO_DURATION) this.endIntro();
     } else if (this.state === "running") {
       this.stepRun(dt);
+    } else if (this.state === "paused") {
+      // Held: the world is frozen exactly as it was. Pace, traffic, timers,
+      // collisions and the camera all wait. The frame is still rendered so
+      // the frozen run stays on screen behind the pause overlay.
     } else if (this.state === "ready") {
       // Decorative idle scroll for the ready scene. It is explicitly NOT run
       // distance: idling can never consume the fair-start buffer, milestones
@@ -732,6 +758,7 @@ export class GameApp {
       fps: Math.round(this.fpsSmoothed),
       newBest: this.newBest,
       milestone: this.milestoneFlash,
+      paused: this.state === "paused",
     });
   }
 

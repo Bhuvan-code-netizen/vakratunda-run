@@ -24,6 +24,8 @@ const KEY_MAP: Record<string, InputAction> = {
   KeyW: "jump",
   Space: "jump",
   KeyR: "restart",
+  KeyP: "pause",
+  Escape: "pause",
   KeyM: "audio",
   Backquote: "debug",
 };

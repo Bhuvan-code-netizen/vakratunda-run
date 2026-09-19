@@ -16,6 +16,8 @@ import {
   VolumeX,
   Zap,
   Infinity as InfinityIcon,
+  Pause as PauseIcon,
+  Play as PlayIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { uiSound } from "@/game/audio/UISound";
@@ -57,6 +59,7 @@ const EMPTY: GameSnapshot = {
   fps: 0,
   newBest: false,
   milestone: null,
+  paused: false,
 };
 
 const LANES_LABEL = ["Left", "Center", "Right"];
@@ -202,6 +205,8 @@ export default function Play() {
 
   const handleStart = useCallback(() => gameRef.current?.start(), []);
   const handleRestart = useCallback(() => gameRef.current?.restart(), []);
+  /** Hold the run, or let it go again. Also reachable with P or Escape. */
+  const handleTogglePause = useCallback(() => gameRef.current?.togglePause(), []);
   const handleToggleSound = useCallback(() => {
     const app = gameRef.current;
     if (!app) return;
@@ -222,6 +227,7 @@ export default function Play() {
   const ClimateIcon =
     snap.rain > 0.18 ? CloudRain : snap.mist > 0.55 ? CloudFog : snap.night > 0.5 ? Moon : SunDim;
   const ultimateLit = snap.powerUps.vighnaharta > 0;
+  const paused = snap.state === "paused";
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#0b0712]">
@@ -255,8 +261,8 @@ export default function Play() {
 
       {/* ---- Vighnaharta banner: the street holds its breath ---- */}
       {snap.state === "running" && ultimateLit && (
-        <div className="pointer-events-none absolute inset-x-0 top-16 flex justify-center sm:top-20">
-          <div className="animate-pulse rounded-full border border-yellow-200/60 bg-black/45 px-5 py-1.5 text-[10px] tracking-[0.45em] text-yellow-100 backdrop-blur-sm">
+        <div className="pointer-events-none absolute inset-x-0 top-48 flex justify-center sm:top-20">
+          <div className="animate-pulse rounded-full border border-yellow-200/60 bg-black/45 px-4 py-1.5 text-[10px] tracking-[0.2em] text-yellow-100 backdrop-blur-sm sm:px-5 sm:tracking-[0.45em]">
             VIGHNAHARTA · REMOVER OF OBSTACLES
           </div>
         </div>
@@ -264,15 +270,15 @@ export default function Play() {
 
       {/* ---- Top HUD: score / best ---- */}
       {!inIntro && (
-        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-4 sm:p-6">
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3 sm:p-6">
           <div>
             <div className="text-[10px] font-semibold tracking-[0.35em] text-amber-200/60">
               SCORE
             </div>
-            <div className="font-[Cinzel,Georgia,serif] text-3xl font-bold text-amber-100 tabular-nums drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] sm:text-4xl">
+            <div className="font-[Cinzel,Georgia,serif] text-2xl font-bold text-amber-100 tabular-nums drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)] sm:text-4xl">
               {snap.score.toLocaleString()}
             </div>
-            <div className="mt-0.5 font-[Rajdhani,system-ui,sans-serif] text-xs text-amber-200/50">
+            <div className="mt-0.5 font-[Rajdhani,system-ui,sans-serif] text-[11px] text-amber-200/50 sm:text-xs">
               {snap.modaks} modaks gathered
             </div>
             {/* Climate readout: the run's own sky and air */}
@@ -288,26 +294,39 @@ export default function Play() {
               <div className="flex items-center justify-end gap-1.5 text-[10px] font-semibold tracking-[0.35em] text-amber-200/60">
                 <Trophy className="size-3" /> BEST
               </div>
-              <div className="text-xl font-semibold text-amber-200/90 tabular-nums sm:text-2xl">
+              <div className="text-lg font-semibold text-amber-200/90 tabular-nums sm:text-2xl">
                 {snap.best.toLocaleString()}
               </div>
             </div>
             <div className="pointer-events-auto flex items-center gap-2">
+              {(snap.state === "running" || paused) && (
+                <button
+                  type="button"
+                  onClick={handleTogglePause}
+                  aria-label={paused ? "Resume the run" : "Pause the run"}
+                  className="flex cursor-pointer items-center gap-1.5 rounded-full border border-amber-200/20 bg-black/40 px-2.5 py-1 text-[10px] tracking-widest text-amber-200/70 sm:px-3 backdrop-blur-sm transition-colors hover:bg-black/60"
+                >
+                  {paused ? <PlayIcon className="size-3" /> : <PauseIcon className="size-3" />}
+                  <span className="hidden sm:inline">{paused ? "RESUME" : "PAUSE"}</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleToggleSound}
                 aria-label={snap.muted ? "Unmute" : "Mute"}
-                className="flex cursor-pointer items-center gap-1.5 rounded-full border border-amber-200/20 bg-black/40 px-3 py-1 text-[10px] tracking-widest text-amber-200/70 backdrop-blur-sm transition-colors hover:bg-black/60"
+                className="flex cursor-pointer items-center gap-1.5 rounded-full border border-amber-200/20 bg-black/40 px-2.5 py-1 text-[10px] tracking-widest text-amber-200/70 sm:px-3 backdrop-blur-sm transition-colors hover:bg-black/60"
               >
                 <SoundIcon className="size-3" />
-                {snap.muted ? "OFF" : "ON"}
+                <span className="hidden sm:inline">{snap.muted ? "OFF" : "ON"}</span>
               </button>
               <button
                 type="button"
                 onClick={() => setDebugOpen((d) => !d)}
-                className="flex cursor-pointer items-center gap-1.5 rounded-full border border-amber-200/20 bg-black/40 px-3 py-1 text-[10px] tracking-widest text-amber-200/70 backdrop-blur-sm transition-colors hover:bg-black/60"
+                aria-label="Toggle the debug panel"
+                className="flex cursor-pointer items-center gap-1.5 rounded-full border border-amber-200/20 bg-black/40 px-2.5 py-1 text-[10px] tracking-widest text-amber-200/70 sm:px-3 backdrop-blur-sm transition-colors hover:bg-black/60"
               >
-                <Gauge className="size-3" /> DEBUG
+                <Gauge className="size-3" />
+                <span className="hidden sm:inline">DEBUG</span>
               </button>
             </div>
           </div>
@@ -316,7 +335,7 @@ export default function Play() {
 
       {/* ---- Divine powers in flight ---- */}
       {snap.state === "running" && aired.length > 0 && (
-        <div className="pointer-events-none absolute left-1/2 top-4 flex -translate-x-1/2 flex-wrap justify-center gap-2 sm:top-6">
+        <div className="pointer-events-none absolute bottom-16 left-1/2 flex -translate-x-1/2 flex-wrap justify-center gap-2 sm:bottom-auto sm:top-6">
           {aired.map((kind) => {
             const meta = POWER_META[kind];
             const Icon = meta.icon;
@@ -324,7 +343,7 @@ export default function Play() {
             return (
               <div
                 key={kind}
-                className={`flex w-32 flex-col gap-1 rounded-lg border px-2.5 py-1.5 backdrop-blur-sm ${meta.ring}`}
+                className={`flex w-28 flex-col gap-1 rounded-lg border px-2.5 py-1.5 backdrop-blur-sm sm:w-32 ${meta.ring}`}
               >
                 <div
                   className={`flex items-center justify-between text-[10px] tracking-[0.2em] ${meta.text}`}
@@ -349,7 +368,7 @@ export default function Play() {
 
       {/* ---- Blessing Chain meter ---- */}
       {snap.state === "running" && snap.chain > 0 && (
-        <div className="pointer-events-none absolute right-4 top-28 w-36 text-right sm:right-6">
+        <div className="pointer-events-none absolute right-3 top-28 w-32 text-right sm:right-6 sm:w-36">
           <div className="text-[10px] tracking-[0.3em] text-amber-300/80">BLESSING CHAIN</div>
           <div className="font-[Cinzel,Georgia,serif] text-2xl font-bold text-amber-200 tabular-nums">
             {snap.chain}
@@ -375,7 +394,7 @@ export default function Play() {
 
       {/* ---- Milestone banner ---- */}
       {snap.state === "running" && snap.milestone !== null && (
-        <div className="pointer-events-none absolute left-1/2 top-20 -translate-x-1/2 rounded-full border border-amber-300/40 bg-black/50 px-5 py-1.5 text-xs tracking-[0.35em] text-amber-200 backdrop-blur-sm">
+        <div className="pointer-events-none absolute left-1/2 top-56 -translate-x-1/2 whitespace-nowrap rounded-full border border-amber-300/40 bg-black/50 px-4 py-1.5 text-xs tracking-[0.35em] text-amber-200 backdrop-blur-sm sm:top-32 sm:px-5">
           {snap.milestone.toLocaleString()} METRES
         </div>
       )}
@@ -425,14 +444,14 @@ export default function Play() {
             <div className="text-[11px] tracking-[0.55em] text-amber-300/70">
               GANAPATI BAPPA MORIYA
             </div>
-            <h1 className="mt-3 bg-gradient-to-b from-amber-50 via-amber-200 to-amber-600 bg-clip-text font-[Cinzel,Georgia,serif] text-4xl font-bold tracking-[0.16em] text-transparent sm:text-6xl">
+            <h1 className="mt-3 bg-gradient-to-b from-amber-50 via-amber-200 to-amber-600 bg-clip-text font-[Cinzel,Georgia,serif] text-2xl font-bold tracking-[0.1em] text-transparent sm:text-6xl sm:tracking-[0.16em]">
               VAKRATUNDA RUN
             </h1>
             <div
               className="mx-auto mt-4 h-px bg-gradient-to-r from-transparent via-amber-300/70 to-transparent"
               style={{ width: `${40 + 45 * p}%` }}
             />
-            <p className="mt-4 font-[Rajdhani,system-ui,sans-serif] text-xs tracking-[0.4em] text-white/45 sm:text-sm">
+            <p className="mt-4 font-[Rajdhani,system-ui,sans-serif] text-[9px] tracking-[0.2em] text-white/45 sm:text-sm sm:tracking-[0.4em]">
               THE ROAD CLEARS BENEATH THE FESTIVAL LIGHTS
             </p>
           </div>
@@ -449,7 +468,7 @@ export default function Play() {
       {/* ---- Back to menu ---- */}
       <Link
         to="/"
-        className="absolute bottom-4 left-4 flex items-center gap-1.5 rounded-full border border-amber-200/20 bg-black/40 px-3 py-1.5 text-xs tracking-wider text-amber-200/80 backdrop-blur-sm transition-colors hover:bg-black/60 sm:bottom-6 sm:left-6"
+        className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full border border-amber-200/20 bg-black/40 px-3 py-1.5 text-xs tracking-wider text-amber-200/80 backdrop-blur-sm transition-colors hover:bg-black/60 sm:bottom-6 sm:left-6"
       >
         <ArrowLeft className="size-3.5" /> Menu
       </Link>
@@ -457,21 +476,24 @@ export default function Play() {
       {/* ---- Control hints (desktop) ---- */}
       {!inIntro && (
         <>
-          <div className="pointer-events-none absolute bottom-4 left-1/2 hidden -translate-x-1/2 gap-5 text-[10px] tracking-[0.25em] text-white/35 sm:flex sm:bottom-6">
+          <div className="pointer-events-none absolute bottom-4 left-1/2 hidden -translate-x-1/2 gap-3 text-[10px] tracking-[0.25em] text-white/35 sm:flex sm:bottom-6 lg:gap-5">
             <span>A · D — LANES</span>
             <span>SPACE — JUMP</span>
             <span>R — RESTART</span>
             <span>M — SOUND</span>
+            <span>P · ESC — PAUSE</span>
           </div>
-          <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 text-[10px] tracking-[0.25em] text-white/35 sm:hidden">
-            SWIPE — LANES · TAP — JUMP
+          <div className="pointer-events-none absolute bottom-3 right-3 text-right text-[10px] leading-4 tracking-[0.25em] text-white/35 sm:hidden">
+            SWIPE — LANES
+            <br />
+            TAP — JUMP
           </div>
         </>
       )}
 
       {/* ---- Debug panel ---- */}
       {debugOpen && (
-        <div className="absolute right-4 top-44 max-h-[70vh] w-52 overflow-y-auto rounded-lg border border-amber-200/20 bg-black/70 p-3 text-[11px] leading-5 text-amber-100/90 backdrop-blur-md sm:right-6">
+        <div className="absolute right-3 top-32 max-h-[55vh] w-48 overflow-y-auto rounded-lg border border-amber-200/20 bg-black/70 p-3 text-[11px] leading-5 text-amber-100/90 backdrop-blur-md sm:right-6 sm:top-44 sm:w-52 sm:max-h-[70vh]">
           <div className="mb-2 text-[10px] font-semibold tracking-[0.3em] text-amber-200/60">
             DEBUG
           </div>
@@ -512,7 +534,35 @@ export default function Play() {
             <dd className="text-right tabular-nums">{snap.score.toLocaleString()}</dd>
           </dl>
           <div className="mt-2 border-t border-white/10 pt-1.5 text-[10px] text-white/35">
-            The backtick key toggles this panel. The M key toggles sound.
+            The backtick key toggles this panel. The M key toggles sound. The P
+            or Escape key holds the run.
+          </div>
+        </div>
+      )}
+
+      {/* ---- Pause overlay ---- */}
+      {paused && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0b0712]/80 px-6 text-center backdrop-blur-sm">
+          <div className="mb-3 text-[11px] tracking-[0.5em] text-amber-300/70">
+            THE ROAD WAITS
+          </div>
+          <h2 className="bg-gradient-to-b from-amber-50 via-amber-200 to-amber-600 bg-clip-text font-[Cinzel,Georgia,serif] text-3xl font-bold tracking-[0.12em] text-transparent sm:text-6xl">
+            PAUSED
+          </h2>
+          <p className="mt-4 max-w-sm font-[Rajdhani,system-ui,sans-serif] text-sm leading-6 text-white/60">
+            Take a breath. The festival lamps are still lit and the road will
+            hold exactly where you left it.
+          </p>
+          <Button
+            type="button"
+            onClick={handleTogglePause}
+            size="lg"
+            className="mt-8 cursor-pointer rounded-full border border-amber-300/40 bg-gradient-to-b from-amber-400 to-amber-700 px-10 text-base font-bold tracking-[0.2em] text-amber-950 shadow-[0_0_40px_rgba(212,160,23,0.35)] transition-transform hover:scale-[1.03]"
+          >
+            <PlayIcon className="mr-2 size-4" /> RESUME THE RUN
+          </Button>
+          <div className="mt-5 text-[10px] tracking-[0.3em] text-white/40">
+            OR PRESS P · ESC
           </div>
         </div>
       )}
@@ -523,7 +573,7 @@ export default function Play() {
           <div className="mb-3 text-[11px] tracking-[0.5em] text-amber-300/70">
             GANAPATI BAPPA MORIYA
           </div>
-          <h1 className="bg-gradient-to-b from-amber-100 via-amber-300 to-amber-600 bg-clip-text font-[Cinzel,Georgia,serif] text-5xl font-bold tracking-[0.12em] text-transparent sm:text-7xl">
+          <h1 className="bg-gradient-to-b from-amber-100 via-amber-300 to-amber-600 bg-clip-text font-[Cinzel,Georgia,serif] text-3xl font-bold tracking-[0.08em] text-transparent sm:text-7xl sm:tracking-[0.12em]">
             VAKRATUNDA
             <br />
             RUN
@@ -563,7 +613,7 @@ export default function Play() {
               A NEW PERSONAL BEST
             </div>
           )}
-          <h2 className="font-[Cinzel,Georgia,serif] text-3xl font-bold tracking-[0.25em] text-amber-100/90 sm:text-4xl">
+          <h2 className="font-[Cinzel,Georgia,serif] text-2xl font-bold tracking-[0.18em] text-amber-100/90 sm:text-4xl sm:tracking-[0.25em]">
             THE RUN ENDS
           </h2>
           <div className="mt-6 flex items-end gap-10">

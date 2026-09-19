@@ -69,6 +69,10 @@ export class PlayerController {
   /** Rest heights of the torso and hip pivots, read from the rig itself. */
   private torsoRestY = 0.84;
   private hipsRestY = 0.84;
+  /** Scurry clock for Mooshika: his own gait, far quicker than the stride. */
+  private mooshikaPhase = 0;
+  /** Resting place of the vahana, captured from the rig itself. */
+  private mooshikaHome = new THREE.Vector3();
 
   // Collision box derived from constants (feet origin)
   get halfWidth() { return PLAYER_HALF_WIDTH; }
@@ -86,6 +90,7 @@ export class PlayerController {
     // instead of assuming where the model put its pivots.
     this.torsoRestY = this.rig.torso.position.y;
     this.hipsRestY = this.rig.hips.position.y;
+    this.mooshikaHome.copy(this.rig.mooshika.position);
     this.root = this.rig.root;
     this.root.position.set(this.x, 0, 0);
     scene.add(this.root);
@@ -131,6 +136,7 @@ export class PlayerController {
     this.animState = "run";
     this.runPhase = 0;
     this.lastStepIndex = 0;
+    this.mooshikaPhase = 0;
     this.squash = 1;
     this.bank = 0;
     this.bankSmooth = 0;
@@ -147,6 +153,13 @@ export class PlayerController {
     r.trunk.position.set(0, 0.02, -0.235);
     r.trunk.rotation.set(r.trunkRestX, 0, r.trunkRestZ);
     r.dhoti.rotation.set(0, 0, 0);
+    r.mooshika.position.copy(this.mooshikaHome);
+    r.mooshika.rotation.set(0, 0, 0);
+    r.mooshikaHead.rotation.set(0, 0, 0);
+    r.mooshikaLegs.forEach((paw) => paw.rotation.set(0, 0, 0));
+    r.mooshikaTail.forEach((joint, i) => {
+      joint.rotation.set(r.mooshikaTailBends[i]!, 0, 0);
+    });
     r.leftLeg.rotation.set(0, 0, 0);
     r.rightLeg.rotation.set(0, 0, 0);
     r.leftKnee.rotation.set(0, 0, 0);
@@ -269,6 +282,66 @@ export class PlayerController {
     // Dhoti trails the lane change
     r.dhoti.rotation.z = this.bankSmooth * 0.05;
     r.dhoti.rotation.x = this.animState === "run" ? 0.06 + this.lean * 0.05 : 0.12;
+
+    this.animateMooshika(dt, r);
+  }
+
+  /**
+   * Mooshika: the vahana scurrying ahead of the stride.
+   *
+   * His gait is deliberately not the running stride. A mouse steps in short,
+   * quick bursts on diagonal pairs — front-left with back-right — so he is
+   * driven from his own clock at roughly twice the cadence of the run. Off the
+   * ground he tucks his paws and streams his tail; when the run ends he skids
+   * flat. Nothing here reads or writes the score: he is company, not score.
+   */
+  private animateMooshika(dt: number, r: GaneshaRig) {
+    const run = this.animState === "run";
+    const air = this.animState === "jump" || this.animState === "fall";
+    const dead = this.animState === "dead";
+
+    // Short quick steps, tightening further as the pace climbs.
+    this.mooshikaPhase += dt * (run ? 6.2 + this.lean * 4 : 1.6) * Math.PI * 2;
+    const p = this.mooshikaPhase;
+
+    // Paws in diagonal pairs. Small amplitude at high frequency is what
+    // separates a scurry from a gallop.
+    for (let i = 0; i < r.mooshikaLegs.length; i++) {
+      const paw = r.mooshikaLegs[i]!;
+      const phase = i === 0 || i === 3 ? 0 : Math.PI;
+      paw.rotation.x = air
+        ? -0.5 + (i % 2) * 0.14
+        : dead
+          ? 0.95 + i * 0.05
+          : Math.sin(p + phase) * 0.6;
+    }
+
+    // Body: a fast bob, a pitch that answers the jump, and a roll that follows
+    // the lane change with the god.
+    r.mooshika.position.y =
+      this.mooshikaHome.y + (run ? Math.abs(Math.sin(p)) * 0.01 : 0) - (dead ? 0.015 : 0);
+    r.mooshika.rotation.x =
+      (air ? (this.animState === "jump" ? -0.3 : -0.16) : Math.sin(p * 2) * 0.02) -
+      this.lean * 0.06;
+    r.mooshika.rotation.y = THREE.MathUtils.clamp(-this.bankSmooth * 0.02, -0.35, 0.35);
+    r.mooshika.rotation.z = Math.sin(p) * 0.05 - this.bankSmooth * 0.02;
+
+    // Head: nose forward and up, wobbling a little. He looks down the road,
+    // not at the camera — the eyes of the god already carry the shot.
+    r.mooshikaHead.rotation.x = -0.1 + Math.sin(p + 0.7) * 0.05 - (air ? 0.18 : 0);
+    r.mooshikaHead.rotation.y = Math.sin(p * 0.5 + 1.1) * 0.1;
+
+    // Tail: every joint lags the one before it, so the whip travels outward.
+    const sway = run ? 1 : 0.4;
+    for (let i = 0; i < r.mooshikaTail.length; i++) {
+      const joint = r.mooshikaTail[i]!;
+      joint.rotation.x =
+        r.mooshikaTailBends[i]! +
+        Math.sin(p * 0.9 - i * 0.55) * 0.05 * sway +
+        (air ? -0.12 : 0) -
+        this.lean * 0.04;
+      joint.rotation.y = Math.sin(p * 0.8 - i * 0.5) * 0.09 * sway;
+    }
   }
 
   private updateAnimation(dt: number, runSpeed: number) {

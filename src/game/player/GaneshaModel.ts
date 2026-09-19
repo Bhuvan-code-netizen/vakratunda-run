@@ -72,6 +72,18 @@ export interface GaneshaRig {
   rightKnee: THREE.Group;
   /** The wrap over the hips only — the thigh cloth is carried by the legs. */
   dhoti: THREE.Group;
+  /** Mooshika, the mouse who carries him — the whole animal. */
+  mooshika: THREE.Group;
+  /** Head pivot: he noses forward and turns with the run. */
+  mooshikaHead: THREE.Group;
+  /** Four paws — front pair, then back pair — for the scurry cycle. */
+  mooshikaLegs: THREE.Group[];
+  /** Tail joints, base to tip, so the whip travels outward. */
+  mooshikaTail: THREE.Group[];
+  /** Resting droop per tail joint, so animation offsets instead of resets. */
+  mooshikaTailBends: number[];
+  /** Resting height of the animal above the road, for bob offsets. */
+  mooshikaRestY: number;
 }
 
 interface GaneshaMaterials {
@@ -92,6 +104,10 @@ interface GaneshaMaterials {
   jade: THREE.MeshStandardMaterial;
   eyeWhite: THREE.MeshStandardMaterial;
   dark: THREE.MeshStandardMaterial;
+  /** Mooshika, the mouse vahana: grey fur, a pale belly, a pink nose. */
+  fur: THREE.MeshPhysicalMaterial;
+  furLight: THREE.MeshPhysicalMaterial;
+  nose: THREE.MeshStandardMaterial;
   halo: THREE.MeshBasicMaterial;
 }
 
@@ -227,6 +243,19 @@ function materials(): GaneshaMaterials {
     jade: standard(COLORS.jade, 0.4, { emissive: COLORS.jade, emissiveIntensity: 0.18 }),
     eyeWhite: standard(0xf6f1e6, 0.26),
     dark: standard(COLORS.eye, 0.4),
+    // Fur wants a soft sheen rather than a specular pop: it is what keeps
+    // the mouse reading as hair and not as painted stone.
+    fur: physical(0x9a8f83, 0.74, {
+      sheen: 0.85,
+      sheenRoughness: 0.88,
+      sheenColor: new THREE.Color(0xd3c8b8),
+    }),
+    furLight: physical(0xd9cfc0, 0.68, {
+      sheen: 0.75,
+      sheenRoughness: 0.82,
+      sheenColor: new THREE.Color(0xf4ead9),
+    }),
+    nose: standard(0xe0a0a6, 0.42),
     halo: new THREE.MeshBasicMaterial({
       color: COLORS.haloGlow,
       transparent: true,
@@ -430,6 +459,145 @@ function buildLotus(m: GaneshaMaterials): THREE.Group {
   return lotus;
 }
 
+/** Resting droop of each tail joint: back and down, then curling up. */
+const MOOSHIKA_TAIL_BENDS = [0.1, 0.06, -0.06, -0.18, -0.3];
+const MOOSHIKA_TAIL_SEGMENT = 0.075;
+
+/**
+ * Mooshika, the mouse who carries him.
+ *
+ * Built to the same rule as the god: primitives only, every moving part on its
+ * own pivot, facing -Z. He runs just ahead of the stride, clear of the swinging
+ * feet, and scaled small so he reads as the vahana leading the way rather than
+ * as a second character. Animation is exposed as joint handles only.
+ */
+function buildMooshika(m: GaneshaMaterials): {
+  animal: THREE.Group;
+  head: THREE.Group;
+  legs: THREE.Group[];
+  tail: THREE.Group[];
+} {
+  const animal = new THREE.Group();
+
+  const body = new THREE.Group();
+  body.position.y = 0.2;
+  animal.add(body);
+
+  // A long low ellipsoid with a heavy rump — a big temple mouse.
+  const barrel = new THREE.Mesh(sphereGeo(0.19), m.fur);
+  barrel.scale.set(0.82, 0.74, 1.3);
+  body.add(barrel);
+
+  const rump = new THREE.Mesh(sphereGeo(0.15), m.fur);
+  rump.position.set(0, 0.01, 0.15);
+  body.add(rump);
+
+  const chest = new THREE.Mesh(sphereGeo(0.135), m.fur);
+  chest.position.set(0, -0.005, -0.145);
+  chest.scale.set(0.96, 0.94, 1);
+  body.add(chest);
+
+  // The pale underside, catching what little light reaches in under him.
+  const belly = new THREE.Mesh(sphereGeo(0.16), m.furLight);
+  belly.position.set(0, -0.07, -0.02);
+  belly.scale.set(0.82, 0.5, 1.15);
+  body.add(belly);
+
+  // A gold collar with a bell, the way a temple mouse is dressed.
+  const collar = new THREE.Mesh(torusGeo(0.104, 0.011), m.gold);
+  collar.position.set(0, 0.015, -0.19);
+  body.add(collar);
+
+  const bell = new THREE.Mesh(sphereGeo(0.023), m.goldLit);
+  bell.position.set(0, -0.085, -0.19);
+  body.add(bell);
+
+  const head = new THREE.Group();
+  head.position.set(0, 0.035, -0.215);
+  body.add(head);
+
+  const skull = new THREE.Mesh(sphereGeo(0.098), m.fur);
+  skull.scale.set(0.9, 0.86, 1.05);
+  head.add(skull);
+
+  const snout = new THREE.Mesh(coneGeo(0.058, 0.15, 10), m.fur);
+  snout.position.set(0, -0.022, -0.115);
+  snout.rotation.x = -Math.PI / 2;
+  head.add(snout);
+
+  const noseTip = new THREE.Mesh(sphereGeo(0.021), m.nose);
+  noseTip.position.set(0, -0.028, -0.19);
+  head.add(noseTip);
+
+  for (const side of [-1, 1] as const) {
+    const eye = new THREE.Mesh(sphereGeo(0.019), m.dark);
+    eye.position.set(side * 0.05, 0.022, -0.068);
+    head.add(eye);
+
+    // Big round ears: from the side, they are the whole silhouette.
+    const ear = new THREE.Mesh(sphereGeo(0.075), m.fur);
+    ear.position.set(side * 0.072, 0.072, 0.012);
+    ear.scale.set(1, 1, 0.3);
+    ear.rotation.z = side * -0.3;
+    head.add(ear);
+
+    const inner = new THREE.Mesh(sphereGeo(0.05), m.furLight);
+    inner.position.set(side * 0.074, 0.07, -0.006);
+    inner.scale.set(1, 1, 0.24);
+    inner.rotation.z = side * -0.3;
+    head.add(inner);
+
+    // Whiskers: four thin rods, splayed, so the snout reads at distance.
+    for (let w = 0; w < 2; w++) {
+      const whisker = new THREE.Mesh(cylGeo(0.0032, 0.0032, 0.14, 5), m.furLight);
+      whisker.position.set(side * 0.052, -0.042 + w * 0.018, -0.132);
+      whisker.rotation.set(0, side * (0.3 - w * 0.16), Math.PI / 2 - side * (0.18 + w * 0.16));
+      head.add(whisker);
+    }
+  }
+
+  // Four paws, each on its own pivot: front pair, then back pair.
+  const legs: THREE.Group[] = [];
+  const paws: ReadonlyArray<readonly [number, number, number]> = [
+    [-0.085, 0.115, -0.155],
+    [0.085, 0.115, -0.155],
+    [-0.1, 0.125, 0.135],
+    [0.1, 0.125, 0.135],
+  ];
+  for (const paw of paws) {
+    const hip = new THREE.Group();
+    hip.position.set(paw[0], paw[1], paw[2]);
+    const thigh = new THREE.Mesh(capsuleGeo(0.032, 0.05), m.fur);
+    thigh.position.y = -0.042;
+    hip.add(thigh);
+    const pad = new THREE.Mesh(sphereGeo(0.035), m.furLight);
+    pad.position.set(0, -0.086, -0.014);
+    pad.scale.set(1, 0.6, 1.3);
+    hip.add(pad);
+    animal.add(hip);
+    legs.push(hip);
+  }
+
+  // The tail: chained joints, so it whips instead of swinging rigid.
+  const tail: THREE.Group[] = [];
+  let parent: THREE.Group = body;
+  for (let i = 0; i < MOOSHIKA_TAIL_BENDS.length; i++) {
+    const joint = new THREE.Group();
+    joint.position.set(0, i === 0 ? 0.03 : 0, i === 0 ? 0.235 : MOOSHIKA_TAIL_SEGMENT);
+    joint.rotation.x = MOOSHIKA_TAIL_BENDS[i]!;
+    const seg = new THREE.Mesh(capsuleGeo(0.021 - i * 0.003, MOOSHIKA_TAIL_SEGMENT * 0.92), m.fur);
+    seg.rotation.x = Math.PI / 2;
+    seg.position.z = MOOSHIKA_TAIL_SEGMENT * 0.5;
+    joint.add(seg);
+    parent.add(joint);
+    parent = joint;
+    tail.push(joint);
+  }
+
+  animal.scale.setScalar(0.7);
+  return { animal, head, legs, tail };
+}
+
 export function buildGanesha(): GaneshaRig {
   const m = materials();
 
@@ -442,6 +610,14 @@ export function buildGanesha(): GaneshaRig {
   const torso = new THREE.Group();
   torso.position.y = 0.84;
   root.add(torso);
+
+  /* ---------------- Mooshika, the mouse who carries him ---------------- */
+
+  // Placed just ahead of the stride: far enough forward that the swinging feet
+  // never pass through him, close enough to read as running in under the god.
+  const mooshika = buildMooshika(m);
+  mooshika.animal.position.set(0, 0, -0.58);
+  root.add(mooshika.animal);
 
   /* ---------------- legs & dhoti ---------------- */
 
@@ -1182,5 +1358,11 @@ export function buildGanesha(): GaneshaRig {
     leftKnee: left.knee,
     rightKnee: right.knee,
     dhoti,
+    mooshika: mooshika.animal,
+    mooshikaHead: mooshika.head,
+    mooshikaLegs: mooshika.legs,
+    mooshikaTail: mooshika.tail,
+    mooshikaTailBends: [...MOOSHIKA_TAIL_BENDS],
+    mooshikaRestY: mooshika.animal.position.y,
   };
 }

@@ -153,8 +153,6 @@ const boxGeo = (w: number, h: number, d: number) =>
 const coneGeo = (r: number, h: number, seg = 12) =>
   cached(`co${r}_${h}_${seg}`, () => new THREE.ConeGeometry(r, h, seg));
 const circleGeo = (r: number) => cached(`ci${r}`, () => new THREE.CircleGeometry(r, 48));
-const planeGeo = (w: number, h: number) =>
-  cached(`p${w}_${h}`, () => new THREE.PlaneGeometry(w, h));
 
 let mats: GaneshaMaterials | null = null;
 

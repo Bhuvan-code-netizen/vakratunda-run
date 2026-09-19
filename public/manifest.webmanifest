@@ -1,1 +1,17 @@
-[FILE_TOO_LARGE]: The combined read_files output exceeded the 100,000 character hard limit. This file was truncated after 0 characters. Read it separately or use code_search for the relevant section.
+{
+  "name": "VAKRATUNDA RUN",
+  "short_name": "Vakratunda",
+  "description": "A cinematic 3D endless runner through a festival-lit Indian city.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0712",
+  "theme_color": "#0b0712",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

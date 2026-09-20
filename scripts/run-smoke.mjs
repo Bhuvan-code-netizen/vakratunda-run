@@ -9,9 +9,21 @@
  * `npm`, which left `npm test` with no output at all.
  *
  * The TypeScript compiler itself is pure JavaScript and runs on both, so this
- * script drives it through its API: check the sources are readable, compile the
- * tests and the modules they touch to CommonJS in a cache directory, import the
- * entry, then clean up. No native binaries and no child processes.
+ * script drives it through its API: compile the entries and every module they
+ * touch to CommonJS in a cache directory, import them, then clean up. No native
+ * binaries and no child processes.
+ *
+ * Two entries run, in this order:
+ *   1. `smoke.test.cts`      — pure logic, no DOM.
+ *   2. `runtime-harness.cts` — builds every WebGL-adjacent system against a
+ *      stubbed canvas and steps it, so a runtime `TypeError` that no unit test
+ *      could see shows up here instead of only in the browser console.
+ *
+ * The harness is passed as an explicit root file rather than being left to the
+ * `include` list. This runtime's filesystem bridge has been unreliable, and a
+ * silently-dropped include entry would make the harness vanish without a word,
+ * which is worse than no harness at all. It is also asserted to be emitted, for
+ * the same reason.
  *
  * The integrity check exists because this runtime can start serving a *bundled
  * chunk* for a source path it has already transformed (a dashboard chunk once
@@ -30,9 +42,13 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const configPath = join(root, "tsconfig.smoke.json");
 const outDir = join(root, "node_modules/.cache/smoke");
 const entry = join(outDir, "scripts/smoke.test.cjs");
+// The harness runs second: it installs DOM stubs, so it must not shape the
+// environment the pure-logic suite sees.
+const harnessSource = join(root, "scripts/runtime-harness.cts");
+const harness = join(outDir, "scripts/runtime-harness.cjs");
 
 /** Markers of a bundled/minified module rather than a hand-written source. */
-const BUNDLE_MARKERS = ['jsxDEV(', 'from"./index-', "from './index-", "fileName:\"/"];
+const BUNDLE_MARKERS = ['jsxDEV(', 'from"./index-', "from './index-", 'fileName:"/'];
 
 function diagnosticHost() {
   return {
@@ -57,8 +73,14 @@ if (read.error) {
 
 const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, root);
 
+// Explicit roots: the config's `include` plus the two entries, de-duplicated.
+const rootNames = [...new Set([...parsed.fileNames, entrySource(), harnessSource])];
+function entrySource() {
+  return join(root, "scripts/smoke.test.cts");
+}
+
 const poisoned = [];
-for (const fileName of parsed.fileNames) {
+for (const fileName of rootNames) {
   const text = ts.sys.readFile(fileName);
   if (text === undefined) {
     poisoned.push(`${relative(root, fileName)} (unreadable)`);
@@ -76,7 +98,7 @@ if (poisoned.length > 0) {
   );
 }
 
-const program = ts.createProgram(parsed.fileNames, parsed.options);
+const program = ts.createProgram(rootNames, parsed.options);
 const emitted = program.emit();
 const diagnostics = ts
   .getPreEmitDiagnostics(program)
@@ -91,9 +113,13 @@ if (diagnostics.length > 0) {
 }
 
 if (!existsSync(entry)) fail("\nsmoke build failed: the compiler never emitted the test entry.");
+if (!existsSync(harness)) {
+  fail("\nsmoke build failed: the compiler never emitted the runtime harness.");
+}
 
 // The compiled bundle is a build artefact, not something to keep around, and
 // the tests may exit the process themselves.
 process.on("exit", () => rmSync(outDir, { recursive: true, force: true }));
 
 await import(pathToFileURL(entry).href);
+await import(pathToFileURL(harness).href);

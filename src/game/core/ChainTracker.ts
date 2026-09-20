@@ -15,7 +15,7 @@ export type ChainEvent =
  * collecting one.
  *
  * `tier` is an INDEX, not the multiplier: 0 means 1x, 1 means 2x, up to 3 for
- * 4x. Callers turn it into points with `1 + tier` and into a HUD label with
+ * 4x. Callers turn it into points with `multiplier` and into a HUD label with
  * `TIER_LABEL[tier]`, which is why the ladder stops one short of the
  * multiplier it represents.
  */

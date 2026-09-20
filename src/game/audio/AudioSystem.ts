@@ -5,9 +5,14 @@
  * nothing fights anything:
  *   `sfx` — gameplay events (footfalls, pickups, grazes, impacts)
  *   `bgm` — the devotional theme
+ *   `bhakti` - the calm bed that plays through the run
  *   (drone + rain go straight to master, since they are ambience, not events)
  *
- * THE THEME is a bhajan: a harmonium lead over a tanpura bed, with a temple
+   * THE RUN BED is what carries the gameplay: a calm, percussion-free bhajan -
+   * tanpura, one slow bansuri phrase, an occasional bell - on its own bus, so
+   * the theme and the run never sound at once.
+   *
+   * THE THEME is a bhajan: a harmonium lead over a tanpura bed, with a temple
  * bell marking every half cycle, a dhol pulse, tabla ticks and hand-claps, and
  * a low "Om" pad swelling underneath. It plays on the menu and through the
  * cinematic intro — where a temple bell tolls as the hero shot begins — then
@@ -69,6 +74,27 @@ const BELL_PARTIALS: ReadonlyArray<readonly [number, number, number]> = [
  */
 const SFX_LEVEL = 0.85;
 const BGM_MENU_LEVEL = 0.32;
+/**
+ * THE RUN BED: a calm, percussion-free bhajan that plays in the background of
+ * the run itself. Where the menu theme is a full ensemble, this is only what a
+ * quiet temple sounds like - a tanpura breathing, a bansuri carrying one slow
+ * phrase, and a bell now and then. No drum, no clap, nothing that pulses: the
+ * player has enough rhythm to track already.
+ *
+ * BHAKTI_STEPS is a sixteen-step Bhairavi phrase, stepwise and low, that opens
+ * and closes on the tonic so the loop has no seam. At BHAKTI_STEP_SECONDS per
+ * step the whole cycle lasts about 26 seconds, and the bell returns roughly
+ * once a minute.
+ */
+const BHAKTI_LEVEL = 0.26;
+const BHAKTI_STEP_SECONDS = 1.6;
+/** The bansuri's root: A4, mid register, so it sits under the effects. */
+const BHAKTI_ROOT = 440;
+const BHAKTI_STEPS: ReadonlyArray<number> = [
+  0, 2, 3, 2, 0, -2, 0, 3,
+  5, 3, 2, 0, -4, -2, 0, 0,
+];
+
 
 export class AudioSystem {
   private ctx: AudioContext | null = null;
@@ -99,6 +125,13 @@ export class AudioSystem {
   private bgmShouldPlay = true;
   /** Guards the single bell toll that opens a run's hero shot. */
   private introBellFired = false;
+  // --- The run bed (built in unlock(), torn down in dispose()) ---
+  private bhaktiGain: GainNode | null = null;
+  private bhaktiTimer: number | null = null;
+  private bhaktiStep = 0;
+  /** Its own lookahead clock, so the slow phrase is not tied to the theme's. */
+  private bhaktiNextTime = 0;
+
 
   /** True once the context exists and is running. */
   get isRunning(): boolean {
@@ -195,6 +228,7 @@ export class AudioSystem {
       source.start();
 
       this.buildBgm();
+      this.buildBhakti();
 
       this.started = true;
       this.fade(this.drone.gain, 0.075, 3.5);
@@ -412,7 +446,171 @@ export class AudioSystem {
   }
 
   /* ------------------------------------------------------------------ */
+  /* The run bed: a calm devotional layer                               */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * The quiet temple: a tanpura bed that breathes, a bansuri line on top, and
+   * a bell between phrases. Everything hangs off the run bed's own gain, which
+   * is held at zero while the menu theme plays and faded up when the run takes
+   * over, so the two never sound at once.
+   */
+  private buildBhakti() {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master) return;
+
+    // Silent until the theme hands over; setMenuDuck decides from there.
+    const bus = ctx.createGain();
+    this.bhaktiGain = bus;
+    bus.gain.value = 0;
+    bus.connect(master);
+
+    // Tanpura: Sa, Pa and the octave. Softer and slower-breathing than the
+    // theme's, so the run bed reads as still rather than accompanying.
+    for (const [freq, gain, detune] of [
+      [116.54, 0.045, 0],
+      [174.61, 0.03, 4],
+      [233.08, 0.022, -4],
+    ] as const) {
+      const osc = ctx.createOscillator();
+      osc.type = "triangle";
+      osc.frequency.value = freq;
+      osc.detune.value = detune;
+      const g = ctx.createGain();
+      g.gain.value = gain;
+      const shimmer = ctx.createOscillator();
+      shimmer.type = "sine";
+      // Slower than the menu bed: this one drifts, it does not ring.
+      shimmer.frequency.value = 0.07 + Math.random() * 0.05;
+      const shimmerGain = ctx.createGain();
+      shimmerGain.gain.value = 0.01;
+      shimmer.connect(shimmerGain);
+      shimmerGain.connect(g.gain);
+      shimmer.start();
+      this.heldOscillators.push(shimmer);
+      osc.connect(g);
+      g.connect(bus);
+      osc.start();
+      this.heldOscillators.push(osc);
+    }
+
+    this.startBhakti();
+  }
+
+  /** Schedule the run bed step by step with lookahead, forever. */
+  private startBhakti() {
+    if (!this.ctx) return;
+    this.bhaktiNextTime = this.ctx.currentTime + 1.5;
+    const tick = () => {
+      if (!this.ctx) return;
+      while (this.bhaktiNextTime < this.ctx.currentTime + 0.5) {
+        this.scheduleBhaktiStep(this.bhaktiNextTime, this.bhaktiStep);
+        this.bhaktiNextTime += BHAKTI_STEP_SECONDS;
+        this.bhaktiStep++;
+      }
+      this.bhaktiTimer = window.setTimeout(tick, 200);
+    };
+    tick();
+  }
+
+  /**
+   * One step of the phrase: a single legato flute note that rings across the
+   * next step or two, a breath at each phrase head, and a bell every other
+   * cycle. Silence is deliberately part of the timing - the line is slow.
+   */
+  private scheduleBhaktiStep(at: number, step: number) {
+    const bus = this.bhaktiGain;
+    if (!this.ctx || !bus) return;
+    const degree = BHAKTI_STEPS[step % BHAKTI_STEPS.length]!;
+    this.flute(at, BHAKTI_STEP_SECONDS * 2.4, degree);
+    if (step % 8 === 0) this.breath(at, 0.01);
+    if (step % 32 === 0) this.strikeBell(at, 0.16, bus);
+  }
+
+  /**
+   * A bansuri note: a sine with a quiet octave harmonic and a touch of vibrato,
+   * taken slowly - a long breath in, a longer fade out. Nothing here has an
+   * attack, which is what keeps the run calm instead of driven. The note is
+   * released with setTargetAtTime, so the tail never clicks.
+   */
+  private flute(when: number, dur: number, degree: number) {
+    const ctx = this.ctx;
+    const bus = this.bhaktiGain;
+    if (!ctx || !bus || this.muted) return;
+
+    const freq = BHAKTI_ROOT * Math.pow(2, degree / 12);
+    const osc = ctx.createOscillator();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(freq, when);
+
+    // The harmonic a real flute's air column adds, at low level.
+    const harm = ctx.createOscillator();
+    harm.type = "triangle";
+    harm.frequency.setValueAtTime(freq * 2, when);
+    const harmGain = ctx.createGain();
+    harmGain.gain.value = 0.12;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 2200;
+    filter.Q.value = 0.4;
+
+    // A player's breath vibrato: slow, shallow, never fully settled.
+    const vib = ctx.createOscillator();
+    vib.type = "sine";
+    vib.frequency.value = 4.8;
+    const vibDepth = ctx.createGain();
+    vibDepth.gain.value = 3.5;
+    vib.connect(vibDepth);
+    vibDepth.connect(osc.detune);
+
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, when);
+    env.gain.linearRampToValueAtTime(0.055, when + 0.55);
+    env.gain.linearRampToValueAtTime(0.04, when + dur * 0.75);
+    env.gain.setTargetAtTime(0.0001, when + dur * 0.85, 0.25);
+
+    osc.connect(filter);
+    harm.connect(harmGain);
+    harmGain.connect(filter);
+    filter.connect(env);
+    env.connect(bus);
+
+    osc.start(when);
+    osc.stop(when + dur + 0.6);
+    harm.start(when);
+    harm.stop(when + dur + 0.6);
+    vib.start(when);
+    vib.stop(when + dur + 0.6);
+  }
+
+  /** Breath across the flute's embouchure: a soft airy band under a phrase. */
+  private breath(at: number, gain: number) {
+    const ctx = this.ctx;
+    const bus = this.bhaktiGain;
+    if (!ctx || !bus || !this.noiseBuffer || this.muted) return;
+
+    const source = ctx.createBufferSource();
+    source.buffer = this.noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 3000;
+    filter.Q.value = 0.5;
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, at);
+    env.gain.linearRampToValueAtTime(gain, at + 0.35);
+    env.gain.exponentialRampToValueAtTime(0.0001, at + 1.1);
+
+    source.connect(filter);
+    filter.connect(env);
+    env.connect(bus);
+    source.start(at, Math.random() * 1.2, 1.2);
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Mix, buses and small helpers                                        */
+  /* ------------------------------------------------------------------ */
   /* ------------------------------------------------------------------ */
 
   /**
@@ -422,6 +620,17 @@ export class AudioSystem {
   private setBgmLevel(level: number, seconds = 1.2) {
     if (this.bgmGain && this.ctx) {
       this.fade(this.bgmGain.gain, this.muted ? 0 : level, seconds);
+    }
+  }
+
+  /**
+   * Fade the run bed. It mirrors the theme exactly: whenever the bhajan is
+   * playing (menu, intro, game over) this sits at zero, and when the run takes
+   * the player's hands the two cross over.
+   */
+  private setBhaktiLevel(level: number, seconds = 2.5) {
+    if (this.bhaktiGain && this.ctx) {
+      this.fade(this.bhaktiGain.gain, this.muted ? 0 : level, seconds);
     }
   }
 
@@ -453,6 +662,7 @@ export class AudioSystem {
     }
     this.bgmShouldPlay = level < 0.95;
     this.setBgmLevel(this.bgmShouldPlay ? BGM_MENU_LEVEL : 0);
+    this.setBhaktiLevel(this.bgmShouldPlay ? 0 : BHAKTI_LEVEL);
   }
 
   private fade(param: AudioParam, value: number, seconds: number) {
@@ -868,6 +1078,7 @@ export class AudioSystem {
     if (state.running && !state.intro && this.bgmShouldPlay) {
       this.bgmShouldPlay = false;
       this.setBgmLevel(0, 0.8);
+      this.setBhaktiLevel(BHAKTI_LEVEL);
     }
 
     if (this.droneFilter) {
@@ -901,6 +1112,10 @@ export class AudioSystem {
       window.clearTimeout(this.melodyTimer);
       this.melodyTimer = null;
     }
+    if (this.bhaktiTimer !== null) {
+      window.clearTimeout(this.bhaktiTimer);
+      this.bhaktiTimer = null;
+    }
     for (const osc of this.heldOscillators) {
       try {
         osc.stop();
@@ -911,6 +1126,7 @@ export class AudioSystem {
     this.heldOscillators = [];
     this.reed = null;
     this.bgmGain = null;
+    this.bhaktiGain = null;
     this.sfxBus = null;
     const ctx = this.ctx;
     this.ctx = null;

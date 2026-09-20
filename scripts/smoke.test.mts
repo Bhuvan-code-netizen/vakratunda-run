@@ -1,7 +1,7 @@
 /**
  * Targeted smoke tests for VAKRATUNDA RUN's core game logic.
  *
- * Runs headless in Node via `npm test` — no WebGL needed
+ * Runs headless in Node via `npx tsx scripts/smoke.test.mts` — no WebGL needed
  * (three.js geometry/materials build fine without a renderer). Covers the
  * modules behind the recent gameplay work: constants tuning curves, the
  * Blessing Chain tracker, score persistence, the Ganesha-on-Mooshika rig and
@@ -82,6 +82,8 @@ ok(
   speedForDistance(1000) > speedForDistance(100) &&
     speedForDistance(20000) > speedForDistance(1000),
 );
+// The pace has two parts: an approach curve that saturates at the ceiling,
+// plus a deliberately unbounded log creep. Assert both halves.
 ok(
   "approach saturates near the ceiling",
   speedForDistance(1e4) < SPEED_CEILING + 5,

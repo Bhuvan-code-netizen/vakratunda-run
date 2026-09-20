@@ -16,12 +16,17 @@ import {
   VolumeX,
   Zap,
   Infinity as InfinityIcon,
+  Maximize2,
+  Minimize2,
   Pause as PauseIcon,
   Play as PlayIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TouchControls } from "@/components/game/TouchControls";
 import { uiSound } from "@/game/audio/UISound";
+import { useIsTouch } from "@/hooks/use-mobile";
 import { GameApp, type GameSnapshot } from "@/game/GameApp";
+import type { InputAction } from "@/game/core/InputController";
 import {
   CHAIN_WINDOW,
   DASH_DURATION,
@@ -160,12 +165,46 @@ export default function Play() {
   const lastState = useRef<GameSnapshot["state"]>("ready");
   const lastMilestone = useRef<number | null>(null);
   const lastUltimate = useRef(false);
+  /** Touch-first device: the on-screen pads and the fullscreen button appear. */
+  const isTouch = useIsTouch();
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // One timer, cleared on unmount, so a wash can never outlive the page.
   useEffect(() => {
     return () => {
       if (washTimer.current !== null) window.clearTimeout(washTimer.current);
     };
+  }, []);
+
+  // Fullscreen is how a phone hides its browser chrome. The button follows the
+  // document's real state, so leaving fullscreen with a system gesture keeps
+  // the icon honest.
+  useEffect(() => {
+    const sync = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", sync);
+    sync();
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
+
+  const handleToggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      if (typeof document.exitFullscreen === "function") {
+        void document.exitFullscreen().catch(() => undefined);
+      }
+      return;
+    }
+    // The game frame, not the canvas: the HUD and the pads should come along.
+    const frame = containerRef.current?.parentElement ?? document.documentElement;
+    const el = frame as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void> | void;
+    };
+    const request = el.requestFullscreen?.bind(el) ?? el.webkitRequestFullscreen?.bind(el);
+    if (!request) return;
+    try {
+      void Promise.resolve(request());
+    } catch {
+      /* Fullscreen is a bonus, never a requirement: iPhone Safari has none. */
+    }
   }, []);
 
   /**
@@ -251,6 +290,20 @@ export default function Play() {
     };
   }, []);
 
+  /** Feed the engine from the on-screen pads — one path for every source. */
+  const handleAction = useCallback((action: InputAction) => {
+    gameRef.current?.sendAction(action);
+  }, []);
+
+  /**
+   * Mobile browsers only allow an AudioContext to start inside a real user
+   * gesture, and a tap on a React button never reaches the engine's own
+   * listeners — so the whole page unlocks audio on its first touch.
+   */
+  const handleUnlockAudio = useCallback(() => {
+    gameRef.current?.unlockAudio();
+  }, []);
+
   const handleStart = useCallback(() => gameRef.current?.start(), []);
   const handleRestart = useCallback(() => gameRef.current?.restart(), []);
   /** Hold the run, or let it go again. Also reachable with P or Escape. */
@@ -278,7 +331,10 @@ export default function Play() {
   const paused = snap.state === "paused";
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-[#0b0712]">
+    <div
+      className="game-surface fixed inset-0 overflow-hidden bg-[#0b0712]"
+      onPointerDown={handleUnlockAudio}
+    >
       <div ref={containerRef} className="absolute inset-0" />
 
       {/* ---- Moment wash: the screen flinches with every big beat ---- */}
@@ -327,7 +383,7 @@ export default function Play() {
 
       {/* ---- Top HUD: score / best ---- */}
       {!inIntro && (
-        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3 sm:p-6">
+        <div className="safe-top safe-x pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3 sm:p-6">
           <div>
             <div className="text-[10px] font-semibold tracking-[0.35em] text-amber-200/60">
               SCORE
@@ -356,6 +412,29 @@ export default function Play() {
               </div>
             </div>
             <div className="pointer-events-auto flex items-center gap-2">
+              {isTouch && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleToggleFullscreen}
+                    aria-label={isFullscreen ? "Leave full screen" : "Play in full screen"}
+                    className="flex cursor-pointer items-center gap-1.5 rounded-full border border-amber-200/20 bg-black/40 px-2.5 py-1 text-[10px] tracking-widest text-amber-200/70 backdrop-blur-sm transition-colors hover:bg-black/60"
+                  >
+                    {isFullscreen ? (
+                      <Minimize2 className="size-3" />
+                    ) : (
+                      <Maximize2 className="size-3" />
+                    )}
+                  </button>
+                  <Link
+                    to="/"
+                    aria-label="Back to the menu"
+                    className="flex cursor-pointer items-center gap-1.5 rounded-full border border-amber-200/20 bg-black/40 px-2.5 py-1 text-[10px] tracking-widest text-amber-200/70 backdrop-blur-sm transition-colors hover:bg-black/60"
+                  >
+                    <ArrowLeft className="size-3" />
+                  </Link>
+                </>
+              )}
               {(snap.state === "running" || paused) && (
                 <button
                   type="button"
@@ -522,30 +601,38 @@ export default function Play() {
         </div>
       )}
 
-      {/* ---- Back to menu ---- */}
-      <Link
-        to="/"
-        className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full border border-amber-200/20 bg-black/40 px-3 py-1.5 text-xs tracking-wider text-amber-200/80 backdrop-blur-sm transition-colors hover:bg-black/60 sm:bottom-6 sm:left-6"
-      >
-        <ArrowLeft className="size-3.5" /> Menu
-      </Link>
+      {/* ---- Mobile pads: touch devices only, live during ready and running ---- */}
+      <TouchControls
+        onAction={handleAction}
+        visible={snap.state === "running" || snap.state === "ready"}
+      />
+
+      {/* ---- Portrait nudge: CSS decides, landscape never sees it ---- */}
+      {!inIntro && (
+        <div className="game-portrait-hint pointer-events-none absolute inset-x-0 top-20 z-10 text-center text-[9px] tracking-[0.3em] text-amber-200/45">
+          ROTATE FOR THE FULL CINEMATIC VIEW
+        </div>
+      )}
+
+      {/* ---- Back to menu: desktop only, phones get it in the top bar ---- */}
+      {!isTouch && (
+        <Link
+          to="/"
+          className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full border border-amber-200/20 bg-black/40 px-3 py-1.5 text-xs tracking-wider text-amber-200/80 backdrop-blur-sm transition-colors hover:bg-black/60 sm:bottom-6 sm:left-6"
+        >
+          <ArrowLeft className="size-3.5" /> Menu
+        </Link>
+      )}
 
       {/* ---- Control hints (desktop) ---- */}
-      {!inIntro && (
-        <>
-          <div className="pointer-events-none absolute bottom-4 left-1/2 hidden -translate-x-1/2 gap-3 text-[10px] tracking-[0.25em] text-white/35 sm:flex sm:bottom-6 lg:gap-5">
-            <span>A · D — LANES</span>
-            <span>SPACE — JUMP</span>
-            <span>R — RESTART</span>
-            <span>M — SOUND</span>
-            <span>P · ESC — PAUSE</span>
-          </div>
-          <div className="pointer-events-none absolute bottom-3 right-3 text-right text-[10px] leading-4 tracking-[0.25em] text-white/35 sm:hidden">
-            SWIPE — LANES
-            <br />
-            TAP — JUMP
-          </div>
-        </>
+      {!inIntro && !isTouch && (
+        <div className="pointer-events-none absolute bottom-4 left-1/2 hidden -translate-x-1/2 gap-3 text-[10px] tracking-[0.25em] text-white/35 sm:flex sm:bottom-6 lg:gap-5">
+          <span>A · D — LANES</span>
+          <span>SPACE — JUMP</span>
+          <span>R — RESTART</span>
+          <span>M — SOUND</span>
+          <span>P · ESC — PAUSE</span>
+        </div>
       )}
 
       {/* ---- Debug panel ---- */}
@@ -619,14 +706,14 @@ export default function Play() {
             <PlayIcon className="mr-2 size-4" /> RESUME THE RUN
           </Button>
           <div className="mt-5 text-[10px] tracking-[0.3em] text-white/40">
-            OR PRESS P · ESC
+            {isTouch ? "THE PAUSE BUTTON SITS TOP RIGHT" : "OR PRESS P · ESC"}
           </div>
         </div>
       )}
 
       {/* ---- Ready overlay ---- */}
       {snap.state === "ready" && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-[#0b0712]/70 via-[#0b0712]/40 to-[#0b0712]/80 px-6 text-center">
+        <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto bg-gradient-to-b from-[#0b0712]/70 via-[#0b0712]/40 to-[#0b0712]/80 px-6 py-8 text-center">
           <div className="mb-3 text-[11px] tracking-[0.5em] text-amber-300/70">
             GANAPATI BAPPA MORIYA
           </div>
@@ -650,7 +737,7 @@ export default function Play() {
             <Zap className="mr-2 size-4" /> BEGIN THE RUN
           </Button>
           <div className="mt-5 text-[10px] tracking-[0.3em] text-white/40">
-            OR PRESS SPACE
+            {isTouch ? "OR TAP THE ROAD TO BEGIN" : "OR PRESS SPACE"}
           </div>
           <button
             type="button"
@@ -664,7 +751,7 @@ export default function Play() {
 
       {/* ---- Game over overlay ---- */}
       {snap.state === "gameover" && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#0b0712]/75 px-6 text-center backdrop-blur-[2px]">
+        <div className="absolute inset-0 flex flex-col items-center justify-center overflow-y-auto bg-[#0b0712]/75 px-6 py-8 text-center backdrop-blur-[2px]">
           {snap.newBest && (
             <div className="mb-4 animate-pulse rounded-full border border-amber-300/50 bg-amber-400/10 px-4 py-1 text-[10px] tracking-[0.4em] text-amber-200">
               A NEW PERSONAL BEST
@@ -703,7 +790,9 @@ export default function Play() {
           >
             <RotateCcw className="mr-2 size-4" /> RUN AGAIN
           </Button>
-          <div className="mt-4 text-[10px] tracking-[0.3em] text-white/40">OR PRESS R</div>
+          <div className="mt-4 text-[10px] tracking-[0.3em] text-white/40">
+            {isTouch ? "OR TAP THE ROAD FOR ANOTHER RUN" : "OR PRESS R"}
+          </div>
         </div>
       )}
     </div>

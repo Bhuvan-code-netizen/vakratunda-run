@@ -149,3 +149,70 @@
     animation-duration: 200ms;
   }
 }
+
+/* ---------------------------------------------------------------- */
+/* Mobile play surface                                              */
+/* ---------------------------------------------------------------- */
+
+/*
+  The run owns the gesture space. touch-callout stops a long press becoming a
+  share sheet, user-select stops a swipe selecting the HUD, overscroll-behavior
+  stops pull-to-refresh interrupting a lane change.
+*/
+.game-surface {
+  touch-action: manipulation;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/*
+  The canvas is the swipe surface: touch-action:none here means the browser can
+  never reinterpret a lane swipe as a pan and cancel the gesture with a
+  pointercancel. It is scoped to the canvas — not the whole surface — so the
+  menu overlays can still scroll on a short landscape screen.
+*/
+.game-surface canvas {
+  touch-action: none;
+}
+
+/*
+  Safe-area padding for the HUD. On a notched phone the score would otherwise
+  sit under the speaker grille and the pads under the home indicator.
+*/
+@media (pointer: coarse) {
+  .safe-top {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+  .safe-bottom {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+  .safe-x {
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+  }
+}
+
+/*
+  A gentle nudge to turn the phone sideways: an endless runner needs the width.
+  Landscape, or a device without a coarse pointer, never sees it.
+*/
+.game-portrait-hint {
+  display: none;
+}
+@media (orientation: portrait) and (pointer: coarse) {
+  .game-portrait-hint {
+    display: block;
+  }
+}
+
+/* The pads are only ever rendered on touch devices, but make their presses
+   feel instant rather than showing a 300 ms tap highlight. */
+.game-pad {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}

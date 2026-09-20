@@ -75,7 +75,11 @@ export class WorldEnvironment {
     work2: new THREE.Color(),
   };
 
-  constructor(scene: THREE.Scene, renderer?: THREE.WebGLRenderer) {
+  constructor(
+    scene: THREE.Scene,
+    renderer?: THREE.WebGLRenderer,
+    options: { shadowMapSize?: number } = {},
+  ) {
     this.scene = scene;
     scene.background = new THREE.Color(COLORS.fog);
     this.fog = new THREE.Fog(COLORS.fog, FOG_NEAR, FOG_FAR);
@@ -132,7 +136,10 @@ export class WorldEnvironment {
     const sun = new THREE.DirectionalLight(COLORS.sunLight, 1.6);
     sun.position.set(-18, 14, -8);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
+    // Shadow map resolution is the cheapest quality dial we have: a phone
+    // renders the same shadows from a 1024 texel map with no visible loss.
+    const shadowMapSize = Math.max(512, Math.round(options.shadowMapSize ?? 2048));
+    sun.shadow.mapSize.set(shadowMapSize, shadowMapSize);
     sun.shadow.camera.near = 1;
     sun.shadow.camera.far = 90;
     sun.shadow.camera.left = -16;

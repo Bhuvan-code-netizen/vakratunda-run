@@ -29,6 +29,14 @@ import {
   SPAWNABLE_KINDS,
   isJumpable,
 } from "../src/game/obstacles/ObstacleModels";
+import {
+  SWIPE_MAX,
+  SWIPE_MIN,
+  TAP_MAX_MS,
+  gestureThresholds,
+  resolveGesture,
+} from "../src/game/core/InputController";
+import { profileForDevice } from "../src/game/core/device";
 import { ChainTracker } from "../src/game/core/ChainTracker";
 import { ScoreStore } from "../src/game/core/ScoreStore";
 import { buildGanesha } from "../src/game/player/GaneshaModel";
@@ -342,6 +350,93 @@ for (const [chain, mult] of expectedTier) {
   }
   ok("power-up pickup height positive", POWERUP_CENTER_Y > 0);
   ok("power-up radius positive", POWERUP_HALF > 0);
+}
+
+/* ------------------------------------------------------------------ */
+/* 7. Mobile input: gesture resolution and the device budget           */
+/* ------------------------------------------------------------------ */
+
+{
+  const { swipe } = gestureThresholds(390, 780);
+
+  // A short press in place is a tap, wherever on the road it lands.
+  eq("tap jumps", resolveGesture(0, 0, 90, swipe), "jump");
+  eq("a shaky tap still jumps", resolveGesture(6, -5, 180, swipe), "jump");
+  eq(
+    "a slow press is not a tap",
+    resolveGesture(0, 0, TAP_MAX_MS + 1, swipe),
+    null,
+  );
+
+  // Horizontal travel past the threshold changes lane, by direction.
+  eq("swipe right", resolveGesture(swipe + 4, 0, 120, swipe), "right");
+  eq("swipe left", resolveGesture(-(swipe + 4), 0, 120, swipe), "left");
+  eq(
+    "a diagonal that is mostly vertical does not change lane",
+    resolveGesture(swipe + 4, swipe * 3, 120, swipe),
+    null,
+  );
+  eq(
+    "a slow drag is not a lane change",
+    resolveGesture(swipe - 1, 0, 600, swipe),
+    null,
+  );
+
+  // Vertical flicks: up jumps, down is deliberately inert.
+  eq("upward flick jumps", resolveGesture(2, -(swipe + 6), 130, swipe), "jump");
+  eq("downward flick is inert", resolveGesture(2, swipe + 20, 130, swipe), null);
+
+  // Thresholds scale with the viewport, and clamp at both ends.
+  const phone = gestureThresholds(390, 844);
+  ok(
+    "phone threshold is usable",
+    phone.swipe >= SWIPE_MIN && phone.swipe <= SWIPE_MAX,
+    `got ${phone.swipe}`,
+  );
+  eq(
+    "degenerate viewport falls back to a phone",
+    gestureThresholds(0, 0).swipe,
+    gestureThresholds(390, 780).swipe,
+  );
+  eq(
+    "a huge viewport clamps at the maximum",
+    gestureThresholds(4000, 3000).swipe,
+    SWIPE_MAX,
+  );
+  ok(
+    "the threshold grows with the short edge",
+    gestureThresholds(500, 900).swipe >= phone.swipe,
+    `${gestureThresholds(500, 900).swipe} vs ${phone.swipe}`,
+  );
+}
+
+{
+  // The rendering budget: touch devices must never render at a pixel ratio
+  // that melts the frame rate.
+  const phone = profileForDevice({ touch: true, budget: "medium", reducedMotion: false });
+  ok(
+    "touch caps the pixel ratio",
+    phone.maxPixelRatio <= 1.5,
+    `got ${phone.maxPixelRatio}`,
+  );
+  ok("touch shrinks the shadow map", phone.shadowMapSize <= 1024);
+  ok("touch keeps a real rain budget", phone.rainCapacity > 0);
+
+  const weakPhone = profileForDevice({ touch: true, budget: "low" });
+  ok(
+    "a weak phone is capped harder",
+    weakPhone.lowPower && weakPhone.maxPixelRatio < phone.maxPixelRatio,
+    `${weakPhone.maxPixelRatio} vs ${phone.maxPixelRatio}`,
+  );
+
+  const desktop = profileForDevice({ touch: false, budget: "high" });
+  eq("desktop keeps full quality", desktop.maxPixelRatio, 2);
+  ok("desktop shadows are the big map", desktop.shadowMapSize >= 2048);
+  eq(
+    "reduced motion is carried through",
+    profileForDevice({ touch: true, reducedMotion: true }).reducedMotion,
+    true,
+  );
 }
 
 /* ------------------------------------------------------------------ */

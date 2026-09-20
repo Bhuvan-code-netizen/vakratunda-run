@@ -5,7 +5,21 @@
   <meta charset="UTF-8" />
   <link rel="icon" type="image/svg+xml" href="/logo.svg" />
   <link rel="manifest" href="/manifest.webmanifest" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- A game must not be pinch-zoomed, double-tap-zoomed or scrolled, and
+       viewport-fit=cover lets the run paint under a notch instead of beside
+       it (the HUD then pads itself with the safe-area insets). -->
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+  />
+  <meta name="theme-color" content="#0b0712" />
+  <meta name="description" content="A cinematic 3D endless runner through a city lit for Ganesh Chaturthi. Three lanes, rising speed, one sacred run." />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Vakratunda" />
+  <meta name="format-detection" content="telephone=no" />
+  <link rel="apple-touch-icon" href="/logo.svg" />
   <title>VAKRATUNDA RUN</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

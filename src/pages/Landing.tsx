@@ -5,6 +5,10 @@ import { Button } from "@/components/ui/button";
 
 const FEATURES = [
   {
+    title: "Plays In Your Pocket",
+    desc: "Swipe left and right to change lane, flick up or tap the pads to leap. Full-screen, twin haptics and a locked-on landscape view on any phone.",
+  },
+  {
     title: "Three Lanes, One Rhythm",
     desc: "Hold the center or cut across the traffic. Every lane change is a decision, and the pace only ever rises.",
   },
@@ -81,7 +85,7 @@ export default function Landing() {
           <Button
             asChild
             size="lg"
-            className="cursor-pointer rounded-full border border-amber-300/40 bg-gradient-to-b from-amber-400 to-amber-700 px-10 text-base font-bold tracking-[0.2em] text-amber-950 shadow-[0_0_50px_rgba(212,160,23,0.35)] transition-transform hover:scale-[1.03]"
+            className="w-full cursor-pointer rounded-full border border-amber-300/40 bg-gradient-to-b from-amber-400 to-amber-700 px-10 text-base font-bold tracking-[0.2em] text-amber-950 shadow-[0_0_50px_rgba(212,160,23,0.35)] transition-transform hover:scale-[1.03] sm:w-auto"
           >
             <Link to="/play">
               PLAY NOW <ChevronRight className="ml-1 size-4" />
@@ -89,16 +93,23 @@ export default function Landing() {
           </Button>
           <div className="flex items-center gap-4 text-[10px] tracking-[0.3em] text-white/35">
             <span className="flex items-center gap-1.5">
-              <Keyboard className="size-3.5" /> KEYBOARD
+              <Keyboard className="size-3.5" /> WASD · ARROWS
             </span>
-            <span className="flex items-center gap-1.5">
-              <Gamepad2 className="size-3.5" /> TOUCH
+            <span className="flex items-center gap-1.5 text-amber-300/60">
+              <Gamepad2 className="size-3.5" /> SWIPE · TAP
             </span>
           </div>
         </motion.div>
 
+        {/* On a phone the whole run is one tap away and installs to the home
+            screen, so say so rather than letting it be discovered. */}
+        <p className="mt-5 max-w-sm font-[Rajdhani,system-ui,sans-serif] text-xs leading-6 text-white/40 sm:hidden">
+          Built for the phone in your hand: swipe to change lane, swipe up or
+          tap to jump, and add it to your home screen for a full-screen run.
+        </p>
+
         {/* Feature cards */}
-        <div className="mt-24 grid w-full gap-5 sm:grid-cols-3">
+        <div className="mt-24 grid w-full gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {FEATURES.map((f, i) => (
             <motion.div
               key={f.title}
@@ -117,8 +128,11 @@ export default function Landing() {
           ))}
         </div>
 
-        <div className="mt-20 text-[10px] tracking-[0.4em] text-white/25">
-          VAKRATUNDA RUN — FIRST MILESTONE
+        <div className="mt-20 flex flex-col items-center gap-2 text-[10px] tracking-[0.4em] text-white/25">
+          <span>VAKRATUNDA RUN — FIRST MILESTONE</span>
+          <span className="tracking-[0.3em] text-white/20">
+            DESKTOP · MOBILE BROWSER · INSTALLABLE
+          </span>
         </div>
       </div>
     </motion.div>

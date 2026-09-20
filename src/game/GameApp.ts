@@ -37,7 +37,15 @@ import {
   weatherAtDistance,
   type PowerUpKind,
 } from "./constants";
-import { InputController } from "./core/InputController";
+import { InputController, type InputAction } from "./core/InputController";
+import { profileForDevice, type DeviceProfile } from "./core/device";
+import {
+  hapticCrash,
+  hapticJump,
+  hapticLane,
+  hapticPower,
+  setHapticsEnabled,
+} from "./core/Haptics";
 import { ScoreStore } from "./core/ScoreStore";
 import { ChainTracker } from "./core/ChainTracker";
 import { PlayerController } from "./player/PlayerController";
@@ -176,6 +184,15 @@ export class GameApp {
   private fpsSmoothed = 60;
   private snapshotTimer = 0;
   private disposed = false;
+  /** The rendering budget this device gets, chosen once at construction. */
+  private readonly profile: DeviceProfile;
+  /**
+   * Screen wake lock (mobile): an endless runner is no use if the phone dozes
+   * off mid-run. Kept as a narrow structural type because `navigator.wakeLock`
+   * is not in every TypeScript DOM lib, and because the request only resolves
+   * on a visible, secure page.
+   */
+  private wakeLock: { release: () => Promise<void> } | null = null;
 
   private readonly powers: ActivePowers = {
     shield: false,
@@ -189,13 +206,27 @@ export class GameApp {
     this.canvas = canvas;
     this.callbacks = callbacks;
 
+    // Profile the device before anything is allocated: it decides the pixel
+    // ratio cap, the shadow map and the rain budget for the whole session.
+    this.profile = profileForDevice();
+
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
       powerPreference: "high-performance",
     });
+    this.renderer.setPixelRatio(
+      Math.min(
+        typeof window === "undefined" ? 1 : window.devicePixelRatio || 1,
+        this.profile.maxPixelRatio,
+      ),
+    );
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Soft PCF shadows are the expensive variant; a modest device gets the
+    // cheaper filter and a smaller map, which is invisible at phone scale.
+    this.renderer.shadowMap.type = this.profile.lowPower
+      ? THREE.PCFShadowMap
+      : THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
 
@@ -203,8 +234,10 @@ export class GameApp {
     this.camera = new THREE.PerspectiveCamera(INTRO_FOV, 1, 0.1, 500);
     this.cameraRig = new CameraRig(this.camera, INTRO_FOV);
 
-    this.environment = new WorldEnvironment(this.scene, this.renderer);
-    this.rain = new WeatherSystem(this.scene);
+    this.environment = new WorldEnvironment(this.scene, this.renderer, {
+      shadowMapSize: this.profile.shadowMapSize,
+    });
+    this.rain = new WeatherSystem(this.scene, this.profile.rainCapacity);
     this.road = new EndlessRoad(this.scene);
     this.effects = new MovementEffects(this.scene);
     this.aura = new DivineAura(this.scene);
@@ -225,6 +258,7 @@ export class GameApp {
       takeOff: (x, y) => {
         this.effects.takeOff(x, y);
         this.audio.jump();
+        hapticJump();
       },
       land: (x, y, impact) => {
         this.effects.land(x, y, impact);
@@ -235,48 +269,150 @@ export class GameApp {
 
     this.player.root.position.set(LANES[1], 0, 0);
 
-    this.input.on((action) => {
-      // Browsers only allow audio to start from a genuine gesture, and this is
-      // the first one we are guaranteed to see.
-      this.audio.unlock();
+    this.input.on(this.handleAction);
 
-      if (action === "debug") {
-        this.callbacks.onDebugToggle?.();
-        return;
-      }
-      if (action === "audio") {
-        this.setMuted(!this.audio.isMuted);
-        return;
-      }
-      // Pausing is the one action that must not skip the hero shot.
-      if (action === "pause") {
-        this.togglePause();
-        return;
-      }
-
-      // Any action during the hero shot skips it, then applies to the run.
-      if (this.state === "intro") this.endIntro();
-
-      if (action === "left") {
-        if (this.state === "running" || this.state === "ready") this.stepLane(-1);
-      } else if (action === "right") {
-        if (this.state === "running" || this.state === "ready") this.stepLane(1);
-      } else if (action === "jump") {
-        if (this.state === "running") this.player.jump();
-        else if (this.state === "ready") this.start();
-        else if (this.state === "gameover") this.restart();
-      } else if (action === "restart") {
-        if (this.state !== "ready") this.restart();
-      }
-    });
-
-    this.input.attach(canvas);
+    // Gestures are listened for page-wide, not on the canvas: on a phone the
+    // ready screen and the intro letterbox cover the canvas, and a tap or swipe
+    // that lands on them must still steer the runner. The controller ignores
+    // anything that starts on a button, a link or the on-screen pads, so the
+    // HUD can never double-fire a lane change.
+    this.input.attach();
     this.handleResize();
     window.addEventListener("resize", this.handleResize);
+    window.addEventListener("orientationchange", this.handleResize);
+    // Mobile browsers shrink the visual viewport as their chrome slides away;
+    // the canvas has to follow or the run ends up letterboxed behind the bars.
+    window.visualViewport?.addEventListener("resize", this.handleResize);
+    // Coming back from another app must not drop the player into a crash they
+    // never saw coming.
+    document.addEventListener("visibilitychange", this.handleVisibility);
+    window.addEventListener("pagehide", this.handlePageHide);
     // A sandboxed runtime can reclaim the GPU context at any time. Unhandled,
     // that turns the canvas white with no explanation — so surface it.
     canvas.addEventListener("webglcontextlost", this.handleContextLost);
     this.loop();
+  }
+
+  /**
+   * Every semantic action — keyboard, swipe, or an on-screen pad — arrives
+   * here. One handler means the touch pads and the keyboard can never drift
+   * apart, and a future gamepad needs no changes to gameplay.
+   */
+  private handleAction = (action: InputAction) => {
+    // Browsers only allow audio to start from a genuine gesture, and this is
+    // the first one we are guaranteed to see.
+    this.audio.unlock();
+
+    if (action === "debug") {
+      this.callbacks.onDebugToggle?.();
+      return;
+    }
+    if (action === "audio") {
+      this.setMuted(!this.audio.isMuted);
+      return;
+    }
+    // Pausing is the one action that must not skip the hero shot.
+    if (action === "pause") {
+      this.togglePause();
+      return;
+    }
+
+    // Any action during the hero shot skips it, then applies to the run.
+    if (this.state === "intro") this.endIntro();
+
+    if (action === "left") {
+      if (this.state === "running" || this.state === "ready") this.stepLane(-1);
+    } else if (action === "right") {
+      if (this.state === "running" || this.state === "ready") this.stepLane(1);
+    } else if (action === "jump") {
+      if (this.state === "running") this.player.jump();
+      else if (this.state === "ready") this.start();
+      else if (this.state === "gameover") this.restart();
+    } else if (action === "restart") {
+      if (this.state !== "ready") this.restart();
+    }
+  };
+
+  /**
+   * Feed an action in from outside the engine — today the on-screen mobile
+   * pads, tomorrow anything else — without touching the DOM from gameplay.
+   */
+  sendAction(action: InputAction) {
+    this.handleAction(action);
+  }
+
+  /**
+   * Start the audio graph from a real user gesture. Mobile browsers only grant
+   * audio inside the gesture that created the context, and a tap on a React
+   * button never reaches the engine's own listeners, so the play page calls
+   * this from its first pointer-down.
+   */
+  unlockAudio() {
+    this.audio.unlock();
+  }
+
+  /**
+   * The page went to the background — an incoming call, a swipe to the home
+   * screen, a locked phone. Hold the run instead of letting the player return
+   * to a crash that happened while they were away.
+   */
+  private handleVisibility = () => {
+    if (this.disposed) return;
+    if (document.hidden) {
+      this.suspendForBackground();
+      return;
+    }
+    // Back in view: ask the screen to stay awake again, but never auto-resume.
+    // The player taps when they are ready.
+    if (this.state === "running" || this.state === "intro") void this.requestWakeLock();
+  };
+
+  /** Navigating away or backgrounding: same hold, no wake-lock bookkeeping. */
+  private handlePageHide = () => {
+    if (this.disposed) return;
+    this.suspendForBackground();
+  };
+
+  private suspendForBackground() {
+    this.input.reset();
+    this.releaseWakeLock();
+    if (this.state === "running") {
+      this.state = "paused";
+      this.emitSnapshot();
+    } else if (this.state === "intro") {
+      // A cinematic nobody is watching is not worth resuming: hand control
+      // over, then hold.
+      this.endIntro();
+      this.state = "paused";
+      this.emitSnapshot();
+    }
+  }
+
+  /** Best-effort screen wake lock; silently unavailable on most desktops. */
+  private async requestWakeLock() {
+    const api = (
+      navigator as Navigator & {
+        wakeLock?: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> };
+      }
+    ).wakeLock;
+    if (!api || this.wakeLock || document.hidden) return;
+    try {
+      const sentinel = await api.request("screen");
+      // The run may have ended while the request was in flight.
+      if (this.disposed || (this.state !== "running" && this.state !== "intro")) {
+        await sentinel.release();
+        return;
+      }
+      this.wakeLock = sentinel;
+    } catch {
+      /* Not permitted, not secure, or not supported: harmless. */
+    }
+  }
+
+  private releaseWakeLock() {
+    const lock = this.wakeLock;
+    this.wakeLock = null;
+    if (lock) void lock.release().catch(() => undefined);
   }
 
   private handleContextLost = (e: Event) => {
@@ -295,6 +431,10 @@ export class GameApp {
   setMuted(muted: boolean) {
     this.audio.unlock();
     this.audio.setMuted(muted);
+    // Haptics follow the sound switch: both are "feedback the player can turn
+    // off", and a phone buzzing in a quiet room is as unwelcome as surprise
+    // audio.
+    setHapticsEnabled(!muted);
     this.emitSnapshot();
   }
 
@@ -309,9 +449,13 @@ export class GameApp {
   togglePause() {
     if (this.state === "running") {
       this.state = "paused";
+      this.input.reset();
+      this.releaseWakeLock();
       this.emitSnapshot();
     } else if (this.state === "paused") {
       this.state = "running";
+      this.audio.unlock();
+      void this.requestWakeLock();
       this.emitSnapshot();
     }
   }
@@ -328,6 +472,7 @@ export class GameApp {
     this.introTimer = 0;
     this.speed = speedForDistance(this.road.distance);
     this.cameraRig.beginIntro();
+    void this.requestWakeLock();
     this.emitSnapshot();
   }
 
@@ -346,6 +491,7 @@ export class GameApp {
     if (this.player.moveLane(dir)) {
       this.effects.laneChange(this.player.root.position.x, dir);
       this.audio.laneChange(dir);
+      hapticLane();
     }
   }
 
@@ -357,6 +503,7 @@ export class GameApp {
     // Vighnaharta gets the full set piece: the street turns over for it.
     if (kind === "vighnaharta") this.effects.ultimateBlast(x, y);
     this.audio.powerUp(kind);
+    hapticPower();
     // The ultimate lands hard: a bigger camera kick than the other relics.
     this.cameraRig.impulse(kind === "dash" ? 0.28 : kind === "vighnaharta" ? 0.34 : 0.1);
   }
@@ -408,6 +555,8 @@ export class GameApp {
     this.climate = { night: 0, mist: 0.15, rain: 0, haze: 0 };
     this.rain.setIntensity(0);
     this.chain.reset();
+    this.input.reset();
+    this.releaseWakeLock();
     this.player.reset();
     this.obstacles.reset();
     this.modaks.reset();
@@ -421,10 +570,21 @@ export class GameApp {
 
   private handleResize = () => {
     if (this.disposed) return;
-    const w = this.canvas.clientWidth || window.innerWidth;
-    const h = this.canvas.clientHeight || window.innerHeight;
+    const w = Math.round(this.canvas.clientWidth || window.innerWidth || 0);
+    const h = Math.round(this.canvas.clientHeight || window.innerHeight || 0);
+    // A hidden tab, or a phone caught mid-rotation, can report a zero-sized
+    // viewport. Sizing the drawing buffer to 0 makes WebGL complain, so wait
+    // for real dimensions and let the next resize event do the work.
+    if (w < 2 || h < 2) return;
+
+    // Pixel ratio first: `setSize` bakes the current ratio into the drawing
+    // buffer, so setting it afterwards left the canvas at the old backing size
+    // until the *next* resize. On a phone that read as a blurry first frame
+    // that only went crisp after rotating the device.
+    this.renderer.setPixelRatio(
+      Math.min(window.devicePixelRatio || 1, this.profile.maxPixelRatio),
+    );
     this.renderer.setSize(w, h, false);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   };
@@ -629,6 +789,7 @@ export class GameApp {
       this.nextMilestone += MILESTONE_STEP;
       this.effects.milestoneBloom(this.player.root.position.x, this.player.positionY);
       this.audio.milestone();
+      hapticPower();
     }
     if (this.milestoneFlashTimer > 0) {
       this.milestoneFlashTimer -= dt;
@@ -731,6 +892,7 @@ export class GameApp {
         this.powers.vighnaharta = false;
         this.effects.crash(this.player.root.position.x, this.player.positionY);
         this.audio.crash();
+        hapticCrash();
         this.audio.setMenuDuck(0.45);
         this.cameraRig.impulse(0.5);
         this.newBest = this.scoreStore.submit(Math.floor(this.score));
@@ -774,7 +936,12 @@ export class GameApp {
   dispose() {
     this.disposed = true;
     cancelAnimationFrame(this.rafId);
+    this.releaseWakeLock();
     window.removeEventListener("resize", this.handleResize);
+    window.removeEventListener("orientationchange", this.handleResize);
+    window.visualViewport?.removeEventListener("resize", this.handleResize);
+    document.removeEventListener("visibilitychange", this.handleVisibility);
+    window.removeEventListener("pagehide", this.handlePageHide);
     this.canvas.removeEventListener("webglcontextlost", this.handleContextLost);
     this.input.detach();
     this.obstacles.dispose();

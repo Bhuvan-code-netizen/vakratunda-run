@@ -308,3 +308,45 @@ Linux, Xcode command line tools on macOS); the first run also needs
  for the details. The web app itself is unaffected: the
 dev server, the preview and the platform build all keep working without Rust
 installed.
+
+## Playing on a phone
+
+Touch is a first-class input here, not a fallback.
+
+- **Swipe** left / right to change lane, **swipe up** to jump, and **tap** to
+  jump, start the run, skip the cinematic intro or restart.
+- **On-screen pads** appear on any touch device — LEFT / RIGHT on the left,
+  JUMP on the right — and they fire on pointer-down, so a lane change never
+  waits for the finger to lift.
+- Swipe distance scales with the viewport and is clamped to 22-72 px, so the
+  same flick works on a phone thumb and on a desktop mouse.
+- A **fullscreen** button sits in the top bar, and portrait phones get a gentle
+  "rotate for the full cinematic view" nudge.
+- **Haptics** on lane changes, jumps, powers and crashes. They follow the sound
+  switch, and browsers without a vibration motor stay silent.
+- The screen is held awake during a run (wake lock), and the run auto-pauses
+  when the page is backgrounded, so returning to the game never means returning
+  to a crash you never saw.
+- Touch devices get a bounded `devicePixelRatio` (1.25-1.5), a 1024² shadow
+  map and a smaller rain budget — see `src/game/core/device.ts`.
+- The HUD pads itself with the safe-area insets (notches, home indicators) and
+  the web manifest makes the game installable, opening straight into `/play`
+  in landscape fullscreen.
+
+The gesture maths is a pure function (`resolveGesture`) so it can be tested
+headlessly, and the on-screen pads call the same `GameApp.sendAction` path as
+the keyboard — there is exactly one place where an action becomes gameplay.
+
+## Tests
+
+`npm test` compiles the smoke tests with the TypeScript compiler and runs the
+result on plain `node` (`scripts/run-smoke.mjs`). The tests cover the tuning
+curves, the Blessing Chain, score persistence, the Ganesha-on-Mooshika rig, the
+demon obstacle catalogue and the mobile gesture/device logic.
+
+In the browser-backed dev runtime `npm` itself hangs before it reaches any
+script, so run the same thing directly and read the output there:
+
+```bash
+node scripts/run-smoke.mjs
+```

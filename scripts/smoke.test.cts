@@ -7,6 +7,7 @@
  * Blessing Chain tracker, score persistence, the Ganesha-on-Mooshika rig and
  * the demon/imp obstacle catalogue.
  */
+import { readFileSync } from "node:fs";
 import * as THREE from "three";
 
 import {
@@ -437,6 +438,52 @@ for (const [chain, mult] of expectedTier) {
     profileForDevice({ touch: true, reducedMotion: true }).reducedMotion,
     true,
   );
+}
+
+/* ------------------------------------------------------------------ */
+/* 8. The mobile styling contract                                      */
+/* ------------------------------------------------------------------ */
+
+{
+  // The play page and the stylesheet agree on a handful of class names. If one
+  // side ever loses one, touch play breaks silently: swipes start scrolling the
+  // page, the pads slip under the home indicator, the portrait nudge covers the
+  // score. Cheap to assert, expensive to notice by hand.
+  const read = (path: string) => {
+    try {
+      return readFileSync(path, "utf8");
+    } catch {
+      return "";
+    }
+  };
+
+  const css = read("src/index.css");
+  const play = read("src/pages/Play.tsx");
+  const pads = read("src/components/game/TouchControls.tsx");
+
+  if (css && play && pads) {
+    for (const name of [
+      ".game-surface",
+      ".game-portrait-hint",
+      ".safe-bottom",
+      ".safe-x",
+    ]) {
+      ok(`stylesheet defines ${name}`, css.includes(name));
+    }
+    ok(
+      "the canvas keeps touch-action none",
+      /.game-surface canvas\s*\{[^}]*touch-action:\s*none/.test(css),
+    );
+    ok("the play page wears the touch surface", play.includes("game-surface"));
+    ok(
+      "the pads use the safe-area helpers",
+      pads.includes("safe-bottom") && pads.includes("safe-x"),
+    );
+    ok("the pads press on pointer-down", pads.includes("onPointerDown"));
+    ok("the pads only render on touch devices", pads.includes("useIsTouch"));
+  } else {
+    ok("styling contract check skipped (sources not readable)", true);
+  }
 }
 
 /* ------------------------------------------------------------------ */

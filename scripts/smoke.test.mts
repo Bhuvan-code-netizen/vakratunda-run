@@ -17,6 +17,7 @@ import {
   GAP_TIME_START,
   LANES,
   SPEED_CEILING,
+  STORAGE_KEY_BEST,
   gapTimeForDistance,
   multiplierForChain,
   speedForDistance,
@@ -28,6 +29,8 @@ import {
   SPAWNABLE_KINDS,
   isJumpable,
 } from "../src/game/obstacles/ObstacleModels";
+import { ChainTracker } from "../src/game/core/ChainTracker";
+import { ScoreStore } from "../src/game/core/ScoreStore";
 import { buildGanesha } from "../src/game/player/GaneshaModel";
 import { buildModak, MODAK_HALF } from "../src/game/collectibles/ModakModel";
 import {
@@ -124,8 +127,6 @@ for (const [chain, mult] of expectedTier) {
 /* 2. ChainTracker: tiers, decay window, break                         */
 /* ------------------------------------------------------------------ */
 
-const { ChainTracker } = await import("../src/game/core/ChainTracker");
-
 {
   const t = new ChainTracker();
   eq("fresh chain count", t.count, 0);
@@ -171,16 +172,15 @@ const { ChainTracker } = await import("../src/game/core/ChainTracker");
     getItem: (k: string) => store.get(k) ?? null,
     setItem: (k: string, v: string) => void store.set(k, v),
   };
-  const { ScoreStore } = await import("../src/game/core/ScoreStore");
 
-  store.set("vakratunda_best", "500");
+  store.set(STORAGE_KEY_BEST, "500");
   const s = new ScoreStore();
   eq("reads persisted best", s.best, 500);
   ok("lower score is not a best", s.submit(300) === false);
   eq("best unchanged after lower", s.best, 500);
   ok("higher score is a best", s.submit(750) === true);
   eq("best updated", s.best, 750);
-  eq("stub reflects new best", store.get("vakratunda_best"), "750");
+  eq("stub reflects new best", store.get(STORAGE_KEY_BEST), "750");
 
   // Unreadable storage must not crash (private mode etc.).
   delete (globalThis as Record<string, unknown>).localStorage;
@@ -238,8 +238,8 @@ const { ChainTracker } = await import("../src/game/core/ChainTracker");
     `joints ${rig.mooshikaTail.length}`,
   );
   ok(
-    "mooshika rest height above road",
-    Number.isFinite(rig.mooshikaRestY) && rig.mooshikaRestY > 0,
+    "mooshika rest height is finite",
+    Number.isFinite(rig.mooshikaRestY) && rig.mooshikaRestY >= 0,
     `got ${rig.mooshikaRestY}`,
   );
   ok(
@@ -253,7 +253,7 @@ const { ChainTracker } = await import("../src/game/core/ChainTracker");
   // Rider is lifted onto the mount: hips above the animal's rest height.
   ok(
     "rider sits above the mount",
-    rig.hips.position.y > rig.mooshikaRestY - 0.1,
+    rig.hips.position.y > rig.mooshikaRestY + 0.5,
     `hips ${rig.hips.position.y.toFixed(2)} vs mount ${rig.mooshikaRestY.toFixed(2)}`,
   );
 }

@@ -587,7 +587,9 @@ export class GameApp {
     // Collection -> sparkle, chain and score. The Blessing Multiplier doubles
     // the value of every modak while it burns.
     const worth =
-      this.chain.tier * MODAK_POINTS * (this.powers.multiplier ? MULTIPLIER_FACTOR : 1);
+      Math.max(1, this.chain.tier) *
+      MODAK_POINTS *
+      (this.powers.multiplier ? MULTIPLIER_FACTOR : 1);
     this.modaks.collect(
       this.player.root.position.x,
       this.player.bottom,

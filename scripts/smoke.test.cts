@@ -38,7 +38,9 @@ import {
   resolveGesture,
 } from "../src/game/core/InputController";
 import { profileForDevice } from "../src/game/core/device";
-import { ChainTracker } from "../src/game/core/ChainTracker";
+import { ChainTracker } from "../src/game/core/BlessingChain";
+import { ModakManager } from "../src/game/collectibles/ModakManager";
+import { LANES as LANE_X } from "../src/game/constants";
 import { ScoreStore } from "../src/game/core/ScoreStore";
 import { buildGanesha } from "../src/game/player/GaneshaModel";
 import { buildModak, MODAK_HALF } from "../src/game/collectibles/ModakModel";
@@ -484,6 +486,96 @@ for (const [chain, mult] of expectedTier) {
   } else {
     ok("styling contract check skipped (sources not readable)", true);
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* 9. Modak Magnet: the field has to actually catch modaks             */
+/* ------------------------------------------------------------------ */
+
+{
+  const DT = 1 / 60;
+  const PLAYER_HALF_W = 0.45;
+  const PLAYER_HALF_D = 0.4;
+  const PLAYER_TOP = 2.2;
+
+  /**
+   * Run a full arc past the runner and count what he actually picked up.
+   * This is the end-to-end question the magnet has to answer: modaks spawn
+   * 150 m away in one lane, the runner never moves sideways, and the field
+   * either brings them home or it does not.
+   */
+  function runArc(opts: {
+    speed: number;
+    magnet: boolean;
+    modakLane: 0 | 1 | 2;
+    playerLane: 0 | 1 | 2;
+    playerY?: number;
+    strength?: number;
+    count?: number;
+  }) {
+    const scene = new THREE.Scene();
+    const manager = new ModakManager(scene, 24);
+    const count = opts.count ?? 5;
+    manager.queueArc(count, opts.modakLane);
+    const playerX = LANE_X[opts.playerLane];
+    const playerY = opts.playerY ?? 0;
+    let collected = 0;
+    // Far enough for the arc to spawn, cross the road and pass him.
+    const frames = Math.ceil(200 / (opts.speed * DT));
+
+    for (let f = 0; f < frames; f++) {
+      manager.update(opts.speed, DT, {
+        active: opts.magnet,
+        x: playerX,
+        y: playerY,
+        strength: opts.strength ?? 1,
+      });
+      collected += manager.collect(
+        playerX,
+        playerY,
+        playerY + PLAYER_TOP,
+        PLAYER_HALF_W,
+        PLAYER_HALF_D,
+      );
+    }
+    manager.dispose();
+    return collected;
+  }
+
+  // Baseline: with no magnet, an off-lane arc is simply missed. Without this
+  // the magnet assertions below would not prove anything.
+  eq("no magnet misses an adjacent-lane arc", runArc({ speed: 18, magnet: false, modakLane: 0, playerLane: 1 }), 0);
+  eq("no magnet misses a far-lane arc", runArc({ speed: 18, magnet: false, modakLane: 0, playerLane: 2 }), 0);
+
+  // The whole arc should come home — not a modak or two.
+  eq("magnet sweeps an adjacent lane", runArc({ speed: 18, magnet: true, modakLane: 0, playerLane: 1 }), 5);
+  eq("magnet sweeps the far lane", runArc({ speed: 18, magnet: true, modakLane: 0, playerLane: 2 }), 5);
+  eq("magnet sweeps from the far lane too", runArc({ speed: 18, magnet: true, modakLane: 2, playerLane: 0 }), 5);
+
+  // Pace is where the old field fell apart: it only held a modak in range for
+  // a couple of frames, so the lateral pull came up metres short.
+  eq("magnet still sweeps at a fast clip", runArc({ speed: 26, magnet: true, modakLane: 0, playerLane: 2 }), 5);
+  eq("magnet still sweeps at top pace", runArc({ speed: 34, magnet: true, modakLane: 0, playerLane: 2 }), 5);
+  eq("magnet sweeps at the very start of a run", runArc({ speed: 11, magnet: true, modakLane: 0, playerLane: 2 }), 5);
+
+  // Mid-jump the field has to rise with him, or the modaks sail underneath.
+  eq(
+    "magnet follows the runner into the air",
+    runArc({ speed: 20, magnet: true, modakLane: 0, playerLane: 1, playerY: 1.6 }),
+    5,
+  );
+
+  // A full arc is five long, and arcs can be longer: the corridor must not
+  // tear the tail off the arc.
+  eq("magnet takes a long arc whole", runArc({ speed: 24, magnet: true, modakLane: 0, playerLane: 2, count: 10 }), 10);
+
+  // Once the field dies the road goes back to normal: a modak that was being
+  // pulled must not still be collected by a magnet that has gone out.
+  eq(
+    "a dead field pulls nothing",
+    runArc({ speed: 18, magnet: true, modakLane: 0, playerLane: 2, strength: 0 }),
+    0,
+  );
 }
 
 /* ------------------------------------------------------------------ */

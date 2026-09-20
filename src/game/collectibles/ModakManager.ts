@@ -2,9 +2,13 @@ import * as THREE from "three";
 import {
   LANES,
   MAGNET_CAPTURE,
+  MAGNET_CAPTURE_Z,
   MAGNET_LIFT_SPEED,
   MAGNET_PULL,
+  MAGNET_PULL_PACE_GAIN,
   MAGNET_RADIUS,
+  MAGNET_REACH_Z,
+  MAGNET_TRAIL_Z,
   OBSTACLE_RECYCLE_Z,
   OBSTACLE_SPAWN_Z,
   type LaneIndex,
@@ -16,12 +20,25 @@ import { buildModak, MODAK_HALF } from "./ModakModel";
  * Fixed pool, zero per-frame allocation; queued arcs hold their shape and flow
  * in from the spawn line when the pool frees up, so the run never runs dry.
  *
- * While the Modak Magnet is lit, loose modaks inside `MAGNET_RADIUS` home in
- * toward the runner at a real velocity (`MAGNET_PULL` m/s, scaled by the field
- * strength and how deep the modak is in the field). A homing velocity — not a
- * positional lerp — means a modak always reaches him before the road scrolls
- * it past, even at top pace. Inside `MAGNET_CAPTURE` of him, the modak snaps
- * to his lane line so the collection test can never miss it.
+ * ## The Modak Magnet
+ *
+ * The field is a corridor the runner runs through — `MAGNET_RADIUS` to either
+ * side, `MAGNET_REACH_Z` ahead and `MAGNET_TRAIL_Z` behind — rather than a disc
+ * around him. That distinction is the whole power-up: a modak two lanes out has
+ * 4.8 m of lane to cover, and inside a disc it was only in range for a couple
+ * of frames at pace, so the pull never had time to close the gap.
+ *
+ * Inside the corridor the pull is *lateral first*: a homing speed in m/s that
+ * scales with the pace and with how deep in the field the modak is, clamped to
+ * the remaining gap so it homes in without overshooting the lane line. The
+ * modak is held on that line for the rest of its approach, which is what makes
+ * a whole arc curve in toward him instead of one lonely modak.
+ *
+ * A modak that has already slipped behind him is reeled back, and one whose
+ * height trails his (he is mid-jump) is lifted to his hands. Both are why the
+ * collection test now almost never misses: inside CAPTURE — deliberately
+ * smaller than the collection box — a caught modak is pinned onto the runner,
+ * so a single frame at top pace cannot carry it through the box unseen.
  */
 
 export interface ModakPickup {
@@ -35,10 +52,13 @@ interface QueuedModak {
   lane: LaneIndex;
 }
 
-/** The magnet's reach, as handed to `update`. */
+/** The magnet's corridor, as handed to `update`. */
 export interface MagnetField {
   active: boolean;
+  /** The runner's lane line, in world X. */
   x: number;
+  /** The runner's height above the road, so the field follows him into the air. */
+  y: number;
   /** 0…1, so a fading magnet weakens before it drops. */
   strength: number;
 }
@@ -48,6 +68,8 @@ const MAX_PENDING = 10;
 const ARC_SPACING = 2.6;
 /** Height of the modak body above its group origin, used for pickup effects. */
 export const MODAK_CENTER_Y = 0.55;
+/** How fast a released modak settles back into its idle float (lambda, 1/s). */
+const FLOAT_DAMP = 5;
 
 export class ModakManager {
   private scene: THREE.Scene;
@@ -93,42 +115,64 @@ export class ModakManager {
     // Scroll, spin and recycle
     const bobPhase = (performance.now() / 1000) * 3.4;
     const pulling = magnet?.active === true && magnet.strength > 0;
+
     for (let i = this.active.length - 1; i >= 0; i--) {
       const inst = this.active[i]!;
       const p = inst.group.position;
       p.z += dz;
-      p.y = Math.sin(bobPhase + p.z * 0.4) * 0.08;
       inst.group.rotation.y += dt * 1.6;
 
+      // Where the idle float wants the modak to sit this frame.
+      const bobY = Math.sin(bobPhase + p.z * 0.4) * 0.08;
+      // Height the field is trying to lift it to; null when nothing is pulling.
+      let liftTo: number | null = null;
+
       if (pulling) {
-        const dx = magnet!.x - p.x;
-        const dzToPlayer = -p.z;
-        const dist = Math.hypot(dx, dzToPlayer);
-        if (dist < MAGNET_RADIUS) {
-          // Depth in the field: 1 at his feet, easing to 0 at the reach.
-          const depth = 1 - dist / MAGNET_RADIUS;
-          const pull = MAGNET_PULL * (0.35 + 0.65 * depth) * magnet!.strength;
+        const field = magnet!;
+        const dx = field.x - p.x;
+        const lateral = Math.abs(dx);
+        /** Positive while the modak is still ahead of the runner. */
+        const ahead = -p.z;
+        const inField =
+          lateral < MAGNET_RADIUS &&
+          ahead < MAGNET_REACH_Z &&
+          ahead > -MAGNET_TRAIL_Z;
 
-          // Homing velocity in the road plane, applied against the scroll:
-          // the X leg closes the lane gap; the Z leg eats the modak's own
-          // forward drift plus its distance behind him, so it always arrives.
-          const nx = dx / (dist || 1e-6);
-          const nz = dzToPlayer / (dist || 1e-6);
-          p.x += nx * pull * dt;
-          p.z += nz * pull * dt;
+        if (inField) {
+          // Proximity ramps the pull: a far modak drifts in, a near one snaps.
+          const proximity = 1 - Math.min(1, lateral / MAGNET_RADIUS);
+          const pull =
+            (MAGNET_PULL + speed * MAGNET_PULL_PACE_GAIN) *
+            (0.45 + 0.55 * proximity) *
+            field.strength;
 
-          // Lift toward his hands once the lane gap is mostly closed.
-          if (Math.abs(dx) < 1.2) {
-            p.y = Math.min(p.y + MAGNET_LIFT_SPEED * dt, MODAK_CENTER_Y);
-          }
+          // Lateral leg, clamped to the remaining gap so the modak settles on
+          // his lane line instead of oscillating around it.
+          p.x += Math.sign(dx) * Math.min(lateral, pull * dt);
 
-          // Capture: inside this ring, snap onto his lane line so the
-          // collection box cannot miss the modak however fast he runs.
-          if (dist < MAGNET_CAPTURE) {
-            p.x = magnet!.x;
-            p.z = Math.max(p.z, dz - 0.35);
+          // A modak that has already slipped behind him is reeled back in. One
+          // still ahead simply rides the road's scroll, now held on his line.
+          if (ahead < 0) p.z = Math.max(0, p.z - pull * dt);
+
+          // Lift towards his hands, following him when he is in the air.
+          liftTo = MODAK_CENTER_Y + Math.max(0, field.y);
+
+          // Capture: pin a caught modak onto him so the collection box cannot
+          // miss it. Both thresholds sit inside the box, so this never looks
+          // like a teleport — it only removes the chance of skipping past.
+          if (lateral < MAGNET_CAPTURE && Math.abs(p.z) < MAGNET_CAPTURE_Z) {
+            p.x = field.x;
+            p.z = 0;
           }
         }
+      }
+
+      if (liftTo === null) {
+        // Idle float, eased rather than assigned, so a modak released by a
+        // dying magnet never pops between the two states.
+        p.y += (bobY - p.y) * (1 - Math.exp(-FLOAT_DAMP * dt));
+      } else {
+        p.y = Math.min(p.y + MAGNET_LIFT_SPEED * dt, liftTo);
       }
 
       if (p.z > OBSTACLE_RECYCLE_Z) {

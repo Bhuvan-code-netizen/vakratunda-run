@@ -47,7 +47,7 @@ import {
   setHapticsEnabled,
 } from "./core/Haptics";
 import { ScoreStore } from "./core/ScoreStore";
-import { ChainTracker } from "./core/ChainTracker";
+import { ChainTracker } from "./core/BlessingChain";
 import { PlayerController } from "./player/PlayerController";
 import { CameraRig } from "./camera/CameraRig";
 import { AudioSystem } from "./audio/AudioSystem";
@@ -731,6 +731,9 @@ export class GameApp {
     this.modaks.update(this.speed, dt, {
       active: this.powers.magnet,
       x: this.player.root.position.x,
+      // The field follows the god, not the road: modaks rise to meet him even
+      // mid-jump instead of sailing underneath.
+      y: this.player.positionY,
       strength: THREE.MathUtils.clamp(this.powerTimers.magnet / 1.5, 0, 1),
     });
     this.runWindStreaks(dt, this.speed);

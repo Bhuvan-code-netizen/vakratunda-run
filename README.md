@@ -342,7 +342,13 @@ the keyboard — there is exactly one place where an action becomes gameplay.
 `npm test` compiles the smoke tests with the TypeScript compiler and runs the
 result on plain `node` (`scripts/run-smoke.mjs`). The tests cover the tuning
 curves, the Blessing Chain, score persistence, the Ganesha-on-Mooshika rig, the
-demon obstacle catalogue and the mobile gesture/device logic.
+demon obstacle catalogue, the mobile gesture/device logic, and the Modak Magnet
+(an end-to-end arc simulation that asserts a whole arc is collected off-lane at
+every pace, and that it is not without the power).
+
+The runner checks the sources it is about to compile and refuses to run if the
+runtime is serving bundled output for one of them, since the errors that
+produces look like game bugs but are not.
 
 In the browser-backed dev runtime `npm` itself hangs before it reaches any
 script, so run the same thing directly and read the output there:

@@ -12,7 +12,8 @@ export type ChainEvent =
 /**
  * The Blessing Chain: consecutive modak pickups build a score multiplier, and
  * the whole thing lapses if the runner goes CHAIN_WINDOW seconds without
- * collecting one.
+ * collecting one. It is what makes a clean line of modaks worth chasing — and
+ * what makes the Modak Magnet worth its while.
  *
  * `tier` is an INDEX, not the multiplier: 0 means 1x, 1 means 2x, up to 3 for
  * 4x. Callers turn it into points with `multiplier` and into a HUD label with

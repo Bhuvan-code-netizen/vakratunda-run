@@ -175,15 +175,33 @@ export const DASH_PACE_GAIN = 0.34;
 /** Modak score factor while the Blessing Multiplier is lit. */
 export const MULTIPLIER_FACTOR = 2;
 /**
- * Modak Magnet tuning. The field reaches across lanes (lane spacing is 2.4 m),
- * the pull is a true homing speed (m/s) rather than a lerp — so a modak always
- * reaches the runner before it scrolls past — and inside CAPTURE range a modak
- * snaps to him so the collection test can never miss it at pace.
+ * Modak Magnet tuning.
+ *
+ * The field is a corridor, not a disc. `MAGNET_RADIUS` is its half-width and
+ * `MAGNET_REACH_Z` / `MAGNET_TRAIL_Z` its reach ahead of and behind the
+ * runner. The width is what actually catches modaks — the far lane is 4.8 m
+ * out — but the *depth* is what makes it work: a disc centred on the runner
+ * only holds a modak in the field for a couple of frames at pace, so the
+ * lateral pull never had time to close a lane gap and almost everything it
+ * should have caught escaped.
+ *
+ * The pull itself is a homing speed (m/s) that scales with the pace and with
+ * how deep in the field the modak is, and it is clamped to the remaining gap,
+ * so a modak can never overshoot the runner's lane line and oscillate.
+ *
+ * CAPTURE is the safety net, kept *inside* the collection box (MODAK_HALF +
+ * PLAYER_HALF_WIDTH = 0.95 m wide, MODAK_HALF + PLAYER_HALF_DEPTH = 0.9 m
+ * deep): a modak that reaches it is pinned onto the runner, so a frame at top
+ * pace can never carry it past the collection test unseen.
  */
 export const MAGNET_RADIUS = 6.5;
-export const MAGNET_PULL = 14;
-export const MAGNET_CAPTURE = 1.6;
-export const MAGNET_LIFT_SPEED = 3.2;
+export const MAGNET_REACH_Z = 22;
+export const MAGNET_TRAIL_Z = 6;
+export const MAGNET_PULL = 17;
+export const MAGNET_PULL_PACE_GAIN = 0.22;
+export const MAGNET_CAPTURE = 0.85;
+export const MAGNET_CAPTURE_Z = 0.8;
+export const MAGNET_LIFT_SPEED = 4.5;
 /** Score for driving straight through an obstacle behind the shield. */
 export const SHIELD_SMASH_POINTS = 40;
 

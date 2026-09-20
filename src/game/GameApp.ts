@@ -587,7 +587,7 @@ export class GameApp {
     // Collection -> sparkle, chain and score. The Blessing Multiplier doubles
     // the value of every modak while it burns.
     const worth =
-      Math.max(1, this.chain.tier) *
+      this.chain.multiplier *
       MODAK_POINTS *
       (this.powers.multiplier ? MULTIPLIER_FACTOR : 1);
     this.modaks.collect(
@@ -659,7 +659,7 @@ export class GameApp {
     if (graze && this.nearMissCooldown <= 0) {
       this.nearMissCooldown = NEAR_MISS_MIN_INTERVAL;
       const points =
-        NEAR_MISS_POINTS * (1 + this.chain.tier) * (this.powers.dash ? 2 : 1);
+        NEAR_MISS_POINTS * this.chain.multiplier * (this.powers.dash ? 2 : 1);
       this.score += points;
       this.nearMissCount++;
       this.nearMissFlash = { points, flyOver: graze.flyOver };

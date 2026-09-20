@@ -1,7 +1,7 @@
 /**
  * Targeted smoke tests for VAKRATUNDA RUN's core game logic.
  *
- * Runs headless in Node via `npx tsx scripts/smoke.test.mts` — no WebGL needed
+ * Runs headless in Node via `npm test` — no WebGL needed
  * (three.js geometry/materials build fine without a renderer). Covers the
  * modules behind the recent gameplay work: constants tuning curves, the
  * Blessing Chain tracker, score persistence, the Ganesha-on-Mooshika rig and
@@ -83,8 +83,19 @@ ok(
     speedForDistance(20000) > speedForDistance(1000),
 );
 ok(
-  "speed is capped near ceiling",
-  speedForDistance(1e6) < SPEED_CEILING + 5,
+  "approach saturates near the ceiling",
+  speedForDistance(1e4) < SPEED_CEILING + 5,
+  `got ${speedForDistance(1e4).toFixed(2)}`,
+);
+ok(
+  "log creep still carries pace past the ceiling",
+  speedForDistance(1e6) > speedForDistance(1e4) &&
+    speedForDistance(1e6) > SPEED_CEILING,
+  `got ${speedForDistance(1e6).toFixed(2)}`,
+);
+ok(
+  "creep is logarithmic, not runaway",
+  speedForDistance(1e6) < SPEED_CEILING + 12,
   `got ${speedForDistance(1e6).toFixed(2)}`,
 );
 eq("gap time starts fresh", gapTimeForDistance(0), GAP_TIME_START);
@@ -133,14 +144,25 @@ for (const [chain, mult] of expectedTier) {
   eq("fresh chain tier", t.tier, 0);
   eq("fresh window remaining", t.windowRemaining, 0);
 
-  const first = t.onModak();
-  ok("first modak raises tier 1", first?.type === "tier-up" && first.tier === 1);
+  // The first modak opens the chain at 1x: no tier change yet.
+  eq("first modak opens at 1x", t.onModak(), null);
+  eq("1x is tier index 0", t.tier, 0);
+  eq("1x multiplier", t.multiplier, 1);
 
-  // No further tier-up until the next threshold.
-  for (let i = 0; i < CHAIN_TIERS[1] - 2; i++) t.onModak();
-  eq("no tier-up below threshold", t.tier, 1);
-  ok("tier-up fires at threshold", t.onModak()?.type === "tier-up");
-  eq("tier advanced", t.tier, 2);
+  // Tier-up lands exactly on the threshold, not before.
+  for (let i = 1; i < CHAIN_TIERS[1] - 1; i++) t.onModak();
+  eq("no tier-up below threshold", t.tier, 0);
+  const up = t.onModak();
+  ok("tier-up fires at threshold", up?.type === "tier-up" && up.tier === 1);
+  eq("tier index advanced", t.tier, 1);
+  eq("multiplier follows the tier", t.multiplier, 2);
+
+  // The index and the point multiplier must never drift apart.
+  for (let n = 1; n <= 40; n++) {
+    const probe = new ChainTracker();
+    for (let i = 0; i < n; i++) probe.onModak();
+    eq("multiplier at " + n + " modaks", probe.multiplier, multiplierForChain(n));
+  }
 
   // Partial window decay.
   t.tick(CHAIN_WINDOW / 2);

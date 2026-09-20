@@ -678,9 +678,13 @@ export class AudioSystem {
     this.slide(freq * 1.9, freq * 1.1, 0.16, { gain: 0.1, type: "triangle", delay: 0.06 });
   }
 
-  /** Chain tier reached: a kazoo "ta-da!", then a cheeky parp. */
+  /**
+   * Chain tier reached: a kazoo "ta-da!", then a cheeky parp. The tier is
+   * the 0-based index (0 = 1x ... 3 = 4x), so it doubles as the pitch step:
+   * every tier-up climbs, and the top step sits exactly on the clamp.
+   */
   tierUp(tier: number) {
-    const root = 392 * Math.pow(2, Math.min(3, Math.max(0, tier - 1)) / 12);
+    const root = 392 * Math.pow(2, Math.min(3, Math.max(0, tier)) / 12);
     const notes = [root, root * 1.26, root * 1.6];
     notes.forEach((freq, i) => {
       this.slide(freq, freq * 1.04, 0.14, {

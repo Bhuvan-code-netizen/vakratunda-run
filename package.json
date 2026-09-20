@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "node scripts/lint.mjs",
-    "test": "tsx scripts/smoke.test.mts",
+    "test": "tsx scripts/smoke.test.ts",
     "format": "prettier --write .",
     "preview": "vite preview",
     "desktop:dev": "npx --yes @tauri-apps/cli@^2 dev",

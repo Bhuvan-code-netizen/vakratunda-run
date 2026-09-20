@@ -12,12 +12,16 @@ export type ChainEvent =
 /**
  * The Blessing Chain: consecutive modak pickups build a score multiplier, and
  * the whole thing lapses if the runner goes CHAIN_WINDOW seconds without
- * collecting one. The count is a pure counter - nothing here knows about the
- * world, so it can be driven straight from GameApp.
+ * collecting one.
+ *
+ * `tier` is an INDEX, not the multiplier: 0 means 1x, 1 means 2x, up to 3 for
+ * 4x. Callers turn it into points with `1 + tier` and into a HUD label with
+ * `TIER_LABEL[tier]`, which is why the ladder stops one short of the
+ * multiplier it represents.
  */
 export class ChainTracker {
   private chainCount = 0;
-  private multiplierTier = 0;
+  private tierIndex = 0;
   private window = 0;
 
   /** Modaks collected in the current, unbroken chain. */
@@ -25,12 +29,14 @@ export class ChainTracker {
     return this.chainCount;
   }
 
-  /**
-   * Current multiplier tier: 0 before the first modak, then 1x-4x following the
-   * CHAIN_TIERS thresholds.
-   */
+  /** Multiplier index: 0 = 1x, 1 = 2x, 2 = 3x, 3 = 4x. */
   get tier(): number {
-    return this.multiplierTier;
+    return this.tierIndex;
+  }
+
+  /** The multiplier itself (1x-4x), for scoring without an off-by-one. */
+  get multiplier(): number {
+    return 1 + this.tierIndex;
   }
 
   /** Seconds of grace left before the chain lapses. */
@@ -39,16 +45,16 @@ export class ChainTracker {
   }
 
   /**
-   * Registers a collected modak. Returns a tier-up event on the pickups that
+   * Registers a collected modak. Returns a `tier-up` event on the pickups that
    * cross a threshold, so the caller can flash and chirp without polling.
    */
   onModak(): ChainEvent | null {
     this.chainCount += 1;
     this.window = CHAIN_WINDOW;
 
-    const tier = multiplierForChain(this.chainCount);
-    if (tier > this.multiplierTier) {
-      this.multiplierTier = tier;
+    const tier = multiplierForChain(this.chainCount) - 1;
+    if (tier > this.tierIndex) {
+      this.tierIndex = tier;
       return { type: "tier-up", tier, count: this.chainCount };
     }
     return null;
@@ -75,7 +81,7 @@ export class ChainTracker {
 
     const count = this.chainCount;
     this.chainCount = 0;
-    this.multiplierTier = 0;
+    this.tierIndex = 0;
     this.window = 0;
     return { type: "broken", count };
   }
@@ -83,7 +89,7 @@ export class ChainTracker {
   /** Back to a fresh run. */
   reset(): void {
     this.chainCount = 0;
-    this.multiplierTier = 0;
+    this.tierIndex = 0;
     this.window = 0;
   }
 }
